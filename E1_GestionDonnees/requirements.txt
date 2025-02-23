@@ -1,0 +1,14 @@
+# Scraping
+scrapy==2.11.0
+beautifulsoup4==4.12.3
+
+# Base de données
+sqlalchemy==2.0.25
+
+# Traitement d'images
+Pillow==10.2.0
+
+# Utilitaires
+python-dotenv==1.0.1
+requests==2.31.0
+pandas==2.2.0
