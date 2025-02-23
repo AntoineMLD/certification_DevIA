@@ -64,7 +64,7 @@ erDiagram
 ### Tables Normalisées
 ```mermaid
 erDiagram
-    VERRES ||--o{ VERRES_TRAITEMENTS : possède
+    VERRES ||--o{ VERRES_TRAITEMENTS : has
     VERRES {
         int id PK
         text nom
@@ -79,28 +79,28 @@ erDiagram
         int gamme_id FK
         int serie_id FK
     }
-    TRAITEMENTS ||--o{ VERRES_TRAITEMENTS : appliqué
+    TRAITEMENTS ||--o{ VERRES_TRAITEMENTS : applies_to
     TRAITEMENTS {
         int id PK
         text nom
         text type
     }
-    FOURNISSEURS ||--o{ VERRES : fournit
+    FOURNISSEURS ||--o{ VERRES : supplies
     FOURNISSEURS {
         int id PK
         text nom
     }
-    MATERIAUX ||--o{ VERRES : compose
+    MATERIAUX ||--o{ VERRES : made_of
     MATERIAUX {
         int id PK
         text nom
     }
-    GAMMES ||--o{ VERRES : catégorise
+    GAMMES ||--o{ VERRES : categorizes
     GAMMES {
         int id PK
         text nom
     }
-    SERIES ||--o{ VERRES : appartient
+    SERIES ||--o{ VERRES : belongs_to
     SERIES {
         int id PK
         text nom
