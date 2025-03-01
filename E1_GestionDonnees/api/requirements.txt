@@ -1,16 +1,11 @@
-# Scraping
-scrapy==2.11.0
-beautifulsoup4==4.12.3
-
-# Base de données
-sqlalchemy==2.0.25
-alembic==1.13.1
-
 # API REST
 fastapi==0.109.2
 uvicorn==0.27.1
 pydantic==2.6.1
 pydantic-settings==2.1.0
+
+# Base de données
+sqlalchemy==2.0.25
 
 # Sécurité
 python-jose[cryptography]==3.3.0
@@ -18,9 +13,4 @@ passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
 
 # Utilitaires
-python-dotenv==1.0.1
-requests==2.31.0
-pandas==2.2.0
-
-# Traitement d'images
-Pillow==10.2.0
+python-dotenv==1.0.1 
