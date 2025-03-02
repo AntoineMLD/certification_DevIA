@@ -35,6 +35,12 @@ jobs:
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
         flake8 . --count --exit-zero --max-complexity=10 --statistics
 
+    - name: Configuration des tests
+      run: |
+        cd E1_GestionDonnees
+        if [ ! -d "tests" ]; then mkdir tests; fi
+        cp tests/.env.test api/app/.env
+
     - name: Exécution des tests
       run: |
         cd E1_GestionDonnees

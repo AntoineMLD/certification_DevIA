@@ -1,5 +1,14 @@
 import pytest
 from fastapi.testclient import TestClient
+from pathlib import Path
+from dotenv import load_dotenv
+import os
+
+# Charger les variables d'environnement de test
+env_test_path = Path(__file__).parent / '.env.test'
+load_dotenv(dotenv_path=env_test_path)
+
+# Import après le chargement des variables d'environnement
 from api.app.main import app
 
 # Créer un client de test
@@ -12,8 +21,8 @@ def test_token_endpoint():
     response = client.post(
         "/token",
         data={
-            "username": "test@example.com",
-            "password": "test123"
+            "username": os.getenv("ADMIN_EMAIL"),
+            "password": os.getenv("ADMIN_PASSWORD")
         }
     )
     assert response.status_code in [200, 401]
