@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Accueil - Outil de Collaboration{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <h1 class="text-center mb-4">Description des Verres</h1>
+        
+        {% if error %}
+        <div class="alert alert-warning">{{ error }}</div>
+        {% else %}
+        <div class="card mb-4">
+            <div class="card-body text-center">
+                <img src="{{ url_for('serve_image', filename=image_filename) }}" 
+                     alt="Verre {{ image_id }}" 
+                     class="img-fluid mb-3 border"
+                     style="max-height: 400px;">
+                
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <a href="{{ url_for('index', index=current_index-1) }}" 
+                       class="btn btn-primary {% if current_index == 0 %}disabled{% endif %}">
+                        ← Précédent
+                    </a>
+                    <div class="text-center">
+                        <div class="text-muted">Image {{ current_index + 1 }} sur {{ total_images }}</div>
+                        <div class="badge bg-{% if description_count == 0 %}danger{% elif description_count < 3 %}warning{% else %}success{% endif %}">
+                            {{ description_count }} description{% if description_count != 1 %}s{% endif %}
+                        </div>
+                    </div>
+                    <a href="{{ url_for('index', index=current_index+1) }}" 
+                       class="btn btn-primary {% if current_index == total_images - 1 %}disabled{% endif %}">
+                        Suivant →
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        {% if existing_descriptions %}
+        <div class="card mb-4">
+            <div class="card-header">
+                Descriptions existantes
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                {% for desc in existing_descriptions %}
+                    <div class="list-group-item">
+                        {{ desc }}
+                    </div>
+                {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card">
+            <div class="card-header">
+                Ajouter une description
+            </div>
+            <div class="card-body">
+                <form id="descriptionForm">
+                    <div class="mb-3">
+                        <label for="verre_id" class="form-label">ID du Verre</label>
+                        <input type="text" class="form-control" id="verre_id" value="{{ image_id }}" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" rows="4" required></textarea>
+                        <div class="form-text">Décrivez ce que vous voyez sur le verre de manière détaillée.</div>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">Enregistrer et Passer au Suivant</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('descriptionForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const verre_id = document.getElementById('verre_id').value;
+    const description = document.getElementById('description').value;
+    
+    try {
+        const response = await fetch('/save_description', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                verre_id: verre_id,
+                description: description
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            // Redirection automatique vers l'image suivante
+            window.location.href = '/?index={{ current_index + 1 }}';
+        } else {
+            alert('Erreur : ' + data.error);
+        }
+    } catch (error) {
+        alert('Erreur lors de l\'enregistrement');
+        console.error('Erreur:', error);
+    }
+});
+</script>
+{% endblock %} 
