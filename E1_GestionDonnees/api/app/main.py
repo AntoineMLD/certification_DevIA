@@ -156,4 +156,112 @@ async def search_glasses(
         .all()
     )
     
-    return glasses 
+    return glasses
+
+@app.post("/verres", response_model=schemas.VerreDetail)
+async def create_glass(
+    verre: schemas.VerreCreate,
+    db: Session = Depends(get_db),
+    current_user: str = Depends(jwt_auth.get_current_user)
+):
+    """
+    Crée un nouveau verre dans la base de données
+    
+    Args:
+        verre: Données du verre à créer
+        db: Session de base de données
+        current_user: Utilisateur authentifié
+    Returns:
+        VerreDetail: Détails du verre créé
+    Raises:
+        HTTPException: Si les données sont invalides
+    """
+    try:
+        # Création d'un nouveau verre avec les données reçues
+        nouveau_verre = Verre(
+            nom=verre.nom,
+            variante=verre.variante,
+            hauteur_min=verre.hauteur_min,
+            hauteur_max=verre.hauteur_max,
+            indice=verre.indice,
+            gravure=verre.gravure,
+            url_source=verre.url_source,
+            fournisseur_id=verre.fournisseur_id,
+            materiau_id=verre.materiau_id,
+            gamme_id=verre.gamme_id,
+            serie_id=verre.serie_id
+        )
+        
+        # Ajout et sauvegarde dans la base de données
+        db.add(nouveau_verre)
+        db.commit()
+        db.refresh(nouveau_verre)
+        
+        # Récupération du verre avec toutes ses relations
+        verre_complet = (
+            db.query(Verre)
+            .options(
+                joinedload(Verre.fournisseur),
+                joinedload(Verre.materiau),
+                joinedload(Verre.gamme),
+                joinedload(Verre.serie),
+                joinedload(Verre.traitements)
+            )
+            .filter(Verre.id == nouveau_verre.id)
+            .first()
+        )
+        
+        return verre_complet
+        
+    except Exception as e:
+        # En cas d'erreur, on annule la transaction
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Erreur lors de la création du verre : {str(e)}"
+        )
+
+@app.delete("/verres/{glass_id}")
+async def delete_glass(
+    glass_id: int,
+    db: Session = Depends(get_db),
+    current_user: str = Depends(jwt_auth.get_current_user)
+):
+    """
+    Supprime un verre de la base de données
+    
+    Args:
+        glass_id: ID du verre à supprimer
+        db: Session de base de données
+        current_user: Utilisateur authentifié
+    Returns:
+        dict: Message de confirmation
+    Raises:
+        HTTPException: Si le verre n'est pas trouvé
+    """
+    try:
+        # Recherche du verre à supprimer
+        verre = db.query(Verre).filter(Verre.id == glass_id).first()
+        
+        # Vérification si le verre existe
+        if verre is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Verre avec l'ID {glass_id} non trouvé"
+            )
+        
+        # Suppression du verre
+        db.delete(verre)
+        db.commit()
+        
+        return {"message": f"Le verre avec l'ID {glass_id} a été supprimé avec succès"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        # En cas d'erreur, on annule la transaction
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erreur lors de la suppression du verre : {str(e)}"
+        ) 
