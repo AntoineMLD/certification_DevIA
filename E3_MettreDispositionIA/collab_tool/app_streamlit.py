@@ -6,6 +6,7 @@ import hashlib
 from supabase import create_client
 import requests
 from io import BytesIO
+import random  # Ajouter en haut du fichier avec les autres imports
 
 # Configuration
 # Chemin vers le dossier d'images local
@@ -116,7 +117,7 @@ def save_description(verre_id, description):
         return False
 
 def get_image_list():
-    """Récupère la liste des images et les trie par nombre de descriptions croissant."""
+    """Récupère la liste des images et les trie par nombre de descriptions croissant avec randomisation."""
     images = []
     descriptions = get_descriptions()
     
@@ -132,7 +133,8 @@ def get_image_list():
                     images.append({
                         'id': image_id,
                         'filename': filename,
-                        'description_count': description_count
+                        'description_count': description_count,
+                        'random_sort': random.random()  # Ajoute une valeur aléatoire pour le tri
                     })
                 except (ValueError, IndexError):
                     continue
@@ -140,8 +142,8 @@ def get_image_list():
         st.error(f"Erreur lors de la lecture du dossier d'images: {e}")
         return []
     
-    # Trie les images par nombre de descriptions croissant, puis par ID
-    return sorted(images, key=lambda x: (x['description_count'], x['id']))
+    # Trie d'abord par nombre de descriptions, puis utilise la valeur aléatoire pour les égalités
+    return sorted(images, key=lambda x: (x['description_count'], x['random_sort']))
 
 def resize_image(image, scale_percent=80):
     """Redimensionne l'image selon un pourcentage."""
