@@ -8,6 +8,8 @@ import requests
 from io import BytesIO
 
 # Configuration
+# Chemin vers le dossier d'images local
+IMAGES_DIR = os.path.join(os.path.dirname(__file__), "..", "images")
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/AntoineMLD/certification_DevIA/main/E3_MettreDispositionIA/images/"
 
 # Configuration Supabase
@@ -59,14 +61,10 @@ def get_descriptions():
         return {}
 
 def get_image_from_github(filename):
-    """Récupère une image depuis GitHub."""
+    """Récupère une image depuis le dossier local."""
     try:
-        response = requests.get(f"{GITHUB_RAW_URL}{filename}")
-        if response.status_code == 200:
-            return Image.open(BytesIO(response.content))
-        else:
-            st.error(f"Erreur lors du chargement de l'image: {response.status_code}")
-            return None
+        image_path = os.path.join(IMAGES_DIR, filename)
+        return Image.open(image_path)
     except Exception as e:
         st.error(f"Erreur lors du chargement de l'image: {e}")
         return None
@@ -114,20 +112,25 @@ def get_image_list():
     images = []
     descriptions = get_descriptions()
     
-    for filename in os.listdir(GITHUB_RAW_URL):
-        if filename.endswith('.png'):
-            try:
-                image_id = int(filename.split('_')[0])
-                # Compte le nombre de descriptions pour cette image
-                description_count = len(descriptions.get(str(image_id), []))
-                
-                images.append({
-                    'id': image_id,
-                    'filename': filename,
-                    'description_count': description_count
-                })
-            except (ValueError, IndexError):
-                continue
+    # Parcourir le dossier d'images local
+    try:
+        for filename in os.listdir(IMAGES_DIR):
+            if filename.endswith('.png'):
+                try:
+                    image_id = int(filename.split('_')[0])
+                    # Compte le nombre de descriptions pour cette image
+                    description_count = len(descriptions.get(str(image_id), []))
+                    
+                    images.append({
+                        'id': image_id,
+                        'filename': filename,
+                        'description_count': description_count
+                    })
+                except (ValueError, IndexError):
+                    continue
+    except Exception as e:
+        st.error(f"Erreur lors de la lecture du dossier d'images: {e}")
+        return []
     
     # Trie les images par nombre de descriptions croissant, puis par ID
     return sorted(images, key=lambda x: (x['description_count'], x['id']))
