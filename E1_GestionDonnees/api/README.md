@@ -173,16 +173,16 @@ Réponse :
 | DELETE | `/verres/{id}` | Supprimer un verre | Oui |
 
 ```mermaid
-graph LR
-    A[Client] --> B[/token]
-    A --> C[/verres]
-    A --> D[/verres/{id}]
-    A --> E[/verres/search]
-    A --> F[POST /verres]
-    A --> G[DELETE /verres/{id}]
+flowchart LR
+    Client --> Token[/token]
+    Client --> ListeVerres[/verres]
+    Client --> DetailVerre[/verres/id]
+    Client --> Recherche[/verres/search]
+    Client --> Creation[/verres POST]
+    Client --> Suppression[/verres/id DELETE]
     
-    B --> H[JWT Token]
-    C & D & E & F & G --> I[Auth Required]
+    Token --> Auth[JWT Token]
+    ListeVerres & DetailVerre & Recherche & Creation & Suppression --> Protection[Auth Required]
 ```
 
 ## Modèles de données
