@@ -4,14 +4,20 @@ from PIL import Image
 from datetime import datetime
 import hashlib
 from supabase import create_client
+import requests
+from io import BytesIO
 
 # Configuration
-IMAGES_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'images')
+GITHUB_RAW_URL = "https://raw.githubusercontent.com/AntoineMLD/certification_DevIA/main/E3_MettreDispositionIA/images/"
 
-# Configuration Supabase (à remplacer par vos propres clés)
+# Configuration Supabase
 SUPABASE_URL = st.secrets["supabase_url"]
 SUPABASE_KEY = st.secrets["supabase_key"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Configuration de l'application
+MAX_DESCRIPTION_LENGTH = 500  # Limite de caractères par description
+MIN_DESCRIPTION_LENGTH = 10   # Minimum de caractères requis
 
 def init_db():
     """Vérifie que la table existe dans Supabase."""
@@ -52,9 +58,38 @@ def get_descriptions():
         st.error(f"Erreur lors de la récupération des descriptions: {e}")
         return {}
 
-def save_description(verre_id, description):
-    """Sauvegarde une description dans Supabase."""
+def get_image_from_github(filename):
+    """Récupère une image depuis GitHub."""
     try:
+        response = requests.get(f"{GITHUB_RAW_URL}{filename}")
+        if response.status_code == 200:
+            return Image.open(BytesIO(response.content))
+        else:
+            st.error(f"Erreur lors du chargement de l'image: {response.status_code}")
+            return None
+    except Exception as e:
+        st.error(f"Erreur lors du chargement de l'image: {e}")
+        return None
+
+def validate_description(description):
+    """Valide une description avant de la sauvegarder."""
+    if len(description) < MIN_DESCRIPTION_LENGTH:
+        st.error(f"La description doit faire au moins {MIN_DESCRIPTION_LENGTH} caractères.")
+        return False
+    if len(description) > MAX_DESCRIPTION_LENGTH:
+        st.error(f"La description ne doit pas dépasser {MAX_DESCRIPTION_LENGTH} caractères.")
+        return False
+    # Vérification basique anti-spam/injection
+    if '<script>' in description.lower() or 'javascript:' in description.lower():
+        return False
+    return True
+
+def save_description(verre_id, description):
+    """Sauvegarde une description dans Supabase avec validation."""
+    try:
+        if not validate_description(description):
+            return False
+            
         # Ajoute un horodatage et un hash pour la sécurité
         timestamp = datetime.now().isoformat()
         hash_value = compute_hash(verre_id, description, timestamp)
@@ -79,7 +114,7 @@ def get_image_list():
     images = []
     descriptions = get_descriptions()
     
-    for filename in os.listdir(IMAGES_FOLDER):
+    for filename in os.listdir(GITHUB_RAW_URL):
         if filename.endswith('.png'):
             try:
                 image_id = int(filename.split('_')[0])
@@ -187,7 +222,7 @@ def main():
             
             # Afficher l'image courante
             current_image = images[st.session_state.current_index]
-            image_path = os.path.join(IMAGES_FOLDER, current_image['filename'])
+            image_path = GITHUB_RAW_URL + current_image['filename']
             
             # Navigation et informations
             col1, col2, col3 = st.columns([1, 2, 1])
@@ -215,8 +250,9 @@ def main():
                     st.rerun()
             
             # Afficher l'image
-            image = Image.open(image_path)
-            st.image(image, caption=f"Verre {current_image['id']}")
+            image = get_image_from_github(current_image['filename'])
+            if image:
+                st.image(image, caption=f"Verre {current_image['id']}")
             
             # Afficher les descriptions existantes
             descriptions = get_descriptions()
