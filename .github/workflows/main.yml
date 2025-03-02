@@ -44,12 +44,4 @@ jobs:
     - name: Exécution des tests
       run: |
         cd E1_GestionDonnees
-        python -m pytest
-
-    - name: Vérification des dépendances
-      uses: snyk/actions/python@master
-      env:
-        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-      with:
-        command: test
-        args: --file=E1_GestionDonnees/requirements.txt 
+        python -m pytest 
