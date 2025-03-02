@@ -72,7 +72,7 @@ def get_image_from_github(filename):
 def validate_description(description):
     """Valide une description avant de la sauvegarder."""
     if len(description) < MIN_DESCRIPTION_LENGTH:
-        st.error(f"La description doit faire au moins {MIN_DESCRIPTION_LENGTH} caractères.")
+        st.error(f"La description doit contenir au moins {MIN_DESCRIPTION_LENGTH} caractères.")
         return False
     if len(description) > MAX_DESCRIPTION_LENGTH:
         st.error(f"La description ne doit pas dépasser {MAX_DESCRIPTION_LENGTH} caractères.")
