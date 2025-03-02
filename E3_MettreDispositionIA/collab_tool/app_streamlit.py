@@ -19,7 +19,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Configuration de l'application
 MAX_DESCRIPTION_LENGTH = 500  # Limite de caractères par description
-MIN_DESCRIPTION_LENGTH = 10   # Minimum de caractères requis
+MIN_DESCRIPTION_LENGTH = 3   # Minimum de caractères requis
 
 def init_db():
     """Vérifie que la table existe dans Supabase."""
