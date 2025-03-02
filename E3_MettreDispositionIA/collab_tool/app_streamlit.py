@@ -48,7 +48,14 @@ def get_descriptions():
             # Vérifie l'intégrité des données
             computed_hash = compute_hash(verre_id, description, timestamp)
             if computed_hash != stored_hash:
-                st.error(f"Attention: Données potentiellement corrompues pour le verre {verre_id}")
+                # Log technique pour le débogage (visible dans les logs Streamlit)
+                print(f"""Erreur d'intégrité des données:
+                    Verre: {verre_id}
+                    Description: {description}
+                    Timestamp: {timestamp}
+                    Hash stocké: {stored_hash}
+                    Hash calculé: {computed_hash}
+                """)
                 continue
                 
             if verre_id not in descriptions:
@@ -57,7 +64,8 @@ def get_descriptions():
         
         return descriptions
     except Exception as e:
-        st.error(f"Erreur lors de la récupération des descriptions: {e}")
+        print(f"Erreur technique: {str(e)}")  # Log technique
+        st.error("Désolé, nous ne pouvons pas charger les descriptions pour le moment.")
         return {}
 
 def get_image_from_github(filename):
