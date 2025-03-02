@@ -1,0 +1,48 @@
+name: CI/CD API France Optique
+
+# Déclencheurs du workflow
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Tests et Vérifications
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Récupération du code
+      uses: actions/checkout@v2
+
+    - name: Configuration de Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.8'
+
+    - name: Installation des dépendances
+      run: |
+        cd E1_GestionDonnees
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install flake8 pytest
+
+    - name: Vérification du code avec flake8
+      run: |
+        cd E1_GestionDonnees
+        # Arrêt sur les erreurs importantes, warning sur le style
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --statistics
+
+    - name: Exécution des tests
+      run: |
+        cd E1_GestionDonnees
+        python -m pytest
+
+    - name: Vérification des dépendances
+      uses: snyk/actions/python@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        command: test 
