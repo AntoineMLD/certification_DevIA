@@ -13,7 +13,9 @@ if __name__ == "__main__":
     # Lancer l'API avec uvicorn
     uvicorn.run(
         "app.main:app",
-        host=settings.HOST,
-        port=settings.PORT,
-        reload=settings.DEBUG
+        host="0.0.0.0",  # Forcer l'écoute sur toutes les interfaces
+        port=8001,
+        reload=settings.DEBUG,
+        log_level="info",
+        access_log=True  # Activer les logs d'accès
     ) 
