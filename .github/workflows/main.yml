@@ -51,4 +51,5 @@ jobs:
       env:
         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
       with:
-        command: test 
+        command: test
+        args: --file=E1_GestionDonnees/requirements.txt 
