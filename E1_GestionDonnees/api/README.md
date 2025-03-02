@@ -69,11 +69,30 @@ venv\Scripts\activate     # Windows
 pip install -r requirements.txt
 ```
 
-3. **Configuration**
+3. **Configuration sécurisée**
+
+⚠️ **IMPORTANT : Configuration de la sécurité**
+
+a. Créer le fichier `.env` :
 ```bash
-# Générer une nouvelle clé secrète et le fichier .env
+# Copier le template
+cp .env.example .env
+
+# Générer une nouvelle clé secrète
 python generate_secret.py
 ```
+
+b. Modifier le fichier `.env` avec vos propres valeurs :
+- Changez `ADMIN_EMAIL` et `ADMIN_PASSWORD`
+- En production, désactivez `DEBUG`
+- Limitez les origines CORS
+- Utilisez un mot de passe fort
+
+c. Sécurité :
+- Ne JAMAIS commiter le fichier `.env`
+- Ne JAMAIS partager les secrets
+- Changer régulièrement les mots de passe
+- En production, utilisez des variables d'environnement
 
 4. **Lancement**
 ```bash
@@ -150,6 +169,8 @@ Réponse :
 | GET | `/verres` | Liste des verres | Oui |
 | GET | `/verres/{id}` | Détails d'un verre | Oui |
 | GET | `/verres/search` | Recherche de verres | Oui |
+| POST | `/verres` | Créer un nouveau verre | Oui |
+| DELETE | `/verres/{id}` | Supprimer un verre | Oui |
 
 ```mermaid
 graph LR
@@ -157,9 +178,11 @@ graph LR
     A --> C[/verres]
     A --> D[/verres/{id}]
     A --> E[/verres/search]
+    A --> F[POST /verres]
+    A --> G[DELETE /verres/{id}]
     
-    B --> F[JWT Token]
-    C & D & E --> G[Auth Required]
+    B --> H[JWT Token]
+    C & D & E & F & G --> I[Auth Required]
 ```
 
 ## Modèles de données
@@ -201,26 +224,46 @@ graph LR
 }
 ```
 
+### Création d'un verre
+```json
+{
+    "nom": "string",
+    "variante": "string",
+    "hauteur_min": 0,
+    "hauteur_max": 100,
+    "indice": 1.5,
+    "gravure": "string",
+    "url_source": "string",
+    "fournisseur_id": 1,
+    "materiau_id": 1,
+    "gamme_id": 1,
+    "serie_id": 1
+}
+```
+
 ## Gestion des erreurs
 
-| Code | Description |
-|------|-------------|
-| 200 | Succès |
-| 401 | Non authentifié |
-| 403 | Non autorisé |
-| 404 | Ressource non trouvée |
-| 422 | Erreur de validation |
-| 500 | Erreur serveur |
+| Code | Description | Exemple |
+|------|-------------|---------|
+| 200 | Succès | Verre créé ou supprimé avec succès |
+| 400 | Requête invalide | Données de création invalides |
+| 401 | Non authentifié | Token manquant ou invalide |
+| 403 | Non autorisé | Droits insuffisants |
+| 404 | Ressource non trouvée | Verre à supprimer non trouvé |
+| 422 | Erreur de validation | Champs requis manquants |
+| 500 | Erreur serveur | Erreur lors de la suppression |
 
 ```mermaid
 graph TD
     A[Requête] --> B{Auth OK?}
     B -->|Non| C[401 Unauthorized]
-    B -->|Oui| D{Ressource existe?}
-    D -->|Non| E[404 Not Found]
-    D -->|Oui| F{Validation OK?}
-    F -->|Non| G[422 Unprocessable]
-    F -->|Oui| H[200 Success]
+    B -->|Oui| D{Action autorisée?}
+    D -->|Non| E[403 Forbidden]
+    D -->|Oui| F{Données valides?}
+    F -->|Non| G[400 Bad Request]
+    F -->|Oui| H{Ressource existe?}
+    H -->|Non| I[404 Not Found]
+    H -->|Oui| J[200 Success]
 ```
 
 ## Tests
@@ -247,6 +290,27 @@ curl -X GET "http://localhost:8000/verres/search?query=photochromique" \
      -H "Authorization: Bearer votre_token"
 ```
 
+4. **Créer un nouveau verre**
+```bash
+curl -X POST "http://localhost:8000/verres" \
+     -H "Authorization: Bearer votre_token" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "nom": "Nouveau Verre",
+       "variante": "Standard",
+       "indice": 1.5,
+       "hauteur_min": 0,
+       "hauteur_max": 100,
+       "gravure": "NV-001"
+     }'
+```
+
+5. **Supprimer un verre**
+```bash
+curl -X DELETE "http://localhost:8000/verres/1" \
+     -H "Authorization: Bearer votre_token"
+```
+
 ### Test avec Python
 
 ```python
@@ -264,18 +328,33 @@ response = requests.post(f"{BASE_URL}/token", data=credentials)
 token = response.json()["access_token"]
 
 # Headers avec le token
-headers = {"Authorization": f"Bearer {token}"}
+headers = {
+    "Authorization": f"Bearer {token}",
+    "Content-Type": "application/json"
+}
 
-# Test des endpoints
-verres = requests.get(f"{BASE_URL}/verres", headers=headers)
-print(verres.json())
-
-recherche = requests.get(
-    f"{BASE_URL}/verres/search",
+# Créer un nouveau verre
+nouveau_verre = {
+    "nom": "Nouveau Verre",
+    "variante": "Standard",
+    "indice": 1.5,
+    "hauteur_min": 0,
+    "hauteur_max": 100,
+    "gravure": "NV-001"
+}
+creation = requests.post(
+    f"{BASE_URL}/verres",
     headers=headers,
-    params={"query": "photochromique"}
+    json=nouveau_verre
 )
-print(recherche.json())
+print("Verre créé:", creation.json())
+
+# Supprimer un verre
+suppression = requests.delete(
+    f"{BASE_URL}/verres/1",
+    headers=headers
+)
+print("Résultat suppression:", suppression.json())
 ```
 
 ## Documentation OpenAPI
