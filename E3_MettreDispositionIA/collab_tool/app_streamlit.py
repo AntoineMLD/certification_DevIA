@@ -1,22 +1,78 @@
 import streamlit as st
 import os
-import json
 from PIL import Image
+from datetime import datetime
+import hashlib
+from supabase import create_client
 
 # Configuration
-UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 IMAGES_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'images')
 
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
+# Configuration Supabase (à remplacer par vos propres clés)
+SUPABASE_URL = st.secrets["supabase_url"]
+SUPABASE_KEY = st.secrets["supabase_key"]
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def init_db():
+    """Vérifie que la table existe dans Supabase."""
+    # Note: Avec Supabase, la table doit être créée manuellement dans l'interface
+    pass
+
+def compute_hash(verre_id, description, timestamp):
+    """Calcule un hash pour vérifier l'intégrité des données."""
+    data = f"{verre_id}{description}{timestamp}"
+    return hashlib.sha256(data.encode()).hexdigest()
 
 def get_descriptions():
-    """Charge les descriptions existantes depuis le fichier JSON."""
-    descriptions_file = os.path.join(UPLOAD_FOLDER, 'descriptions.json')
-    if os.path.exists(descriptions_file):
-        with open(descriptions_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {}
+    """Récupère toutes les descriptions depuis Supabase."""
+    try:
+        # Récupère toutes les descriptions triées par verre_id et date
+        response = supabase.table('descriptions').select('*').order('verre_id').order('created_at').execute()
+        
+        # Organise les descriptions par verre
+        descriptions = {}
+        for record in response.data:
+            verre_id = str(record['verre_id'])
+            description = record['description']
+            timestamp = record['created_at']
+            stored_hash = record['hash']
+            
+            # Vérifie l'intégrité des données
+            computed_hash = compute_hash(verre_id, description, timestamp)
+            if computed_hash != stored_hash:
+                st.error(f"Attention: Données potentiellement corrompues pour le verre {verre_id}")
+                continue
+                
+            if verre_id not in descriptions:
+                descriptions[verre_id] = []
+            descriptions[verre_id].append(description)
+        
+        return descriptions
+    except Exception as e:
+        st.error(f"Erreur lors de la récupération des descriptions: {e}")
+        return {}
+
+def save_description(verre_id, description):
+    """Sauvegarde une description dans Supabase."""
+    try:
+        # Ajoute un horodatage et un hash pour la sécurité
+        timestamp = datetime.now().isoformat()
+        hash_value = compute_hash(verre_id, description, timestamp)
+        
+        # Insère les données dans Supabase
+        data = {
+            'verre_id': verre_id,
+            'description': description,
+            'created_at': timestamp,
+            'hash': hash_value
+        }
+        
+        response = supabase.table('descriptions').insert(data).execute()
+        return True if response.data else False
+    
+    except Exception as e:
+        st.error(f"Erreur lors de la sauvegarde: {e}")
+        return False
 
 def get_image_list():
     """Récupère la liste des images et les trie par nombre de descriptions croissant."""
@@ -28,12 +84,7 @@ def get_image_list():
             try:
                 image_id = int(filename.split('_')[0])
                 # Compte le nombre de descriptions pour cette image
-                description_count = 0
-                if str(image_id) in descriptions:
-                    if isinstance(descriptions[str(image_id)], list):
-                        description_count = len(descriptions[str(image_id)])
-                    else:
-                        description_count = 1
+                description_count = len(descriptions.get(str(image_id), []))
                 
                 images.append({
                     'id': image_id,
@@ -46,30 +97,6 @@ def get_image_list():
     # Trie les images par nombre de descriptions croissant, puis par ID
     return sorted(images, key=lambda x: (x['description_count'], x['id']))
 
-def save_description(verre_id, description):
-    """Sauvegarde une description dans le fichier JSON."""
-    descriptions_file = os.path.join(UPLOAD_FOLDER, 'descriptions.json')
-    descriptions = get_descriptions()
-    
-    # Convertir l'ID en string pour le stockage JSON
-    verre_id = str(verre_id)
-    
-    # Si c'est la première description pour cette image, créer une liste
-    if verre_id not in descriptions:
-        descriptions[verre_id] = []
-    elif not isinstance(descriptions[verre_id], list):
-        # Convertir une ancienne description unique en liste
-        descriptions[verre_id] = [descriptions[verre_id]]
-    
-    # Ajouter la nouvelle description à la liste
-    descriptions[verre_id].append(description)
-    
-    # Sauvegarder les descriptions
-    with open(descriptions_file, 'w', encoding='utf-8') as f:
-        json.dump(descriptions, f, ensure_ascii=False, indent=2)
-    
-    return True
-
 def resize_image(image, scale_percent=80):
     """Redimensionne l'image selon un pourcentage."""
     width = int(image.size[0] * scale_percent / 100)
@@ -77,6 +104,9 @@ def resize_image(image, scale_percent=80):
     return image.resize((width, height), Image.Resampling.LANCZOS)
 
 def main():
+    # Initialiser la base de données au démarrage
+    init_db()
+    
     st.set_page_config(
         page_title="Description des Verres",
         layout="wide",
