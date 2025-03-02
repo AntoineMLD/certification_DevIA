@@ -1,0 +1,46 @@
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1;
+}
+
+.card {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 1rem;
+}
+
+.form-control:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.btn-primary {
+    transition: all 0.2s;
+}
+
+.btn-primary:hover {
+    background-color: #0a58ca;
+    transform: translateY(-1px);
+}
+
+.btn-primary:active {
+    transform: translateY(0);
+}
+
+.img-fluid {
+    border-radius: 4px;
+    transition: transform 0.2s;
+}
+
+.img-fluid:hover {
+    transform: scale(1.02);
+}
+
+.disabled {
+    pointer-events: none;
+    opacity: 0.6;
+} 
