@@ -124,4 +124,49 @@ graph TD
 ## 📝 Notes
 - Ce module E1 constitue la fondation pour les futures fonctionnalités IA
 - L'accent est mis sur la qualité et la structure des données
-- La documentation est considérée comme un délivrable critique 
+- La documentation est considérée comme un délivrable critique
+
+## CI/CD
+
+Le projet utilise GitHub Actions pour l'intégration et le déploiement continus.
+
+### Processus automatisé
+
+1. **Tests automatiques** :
+   - Vérification du code (flake8)
+   - Exécution des tests unitaires (pytest)
+   - Vérification des dépendances (snyk)
+
+2. **Quand** :
+   - À chaque push sur la branche main
+   - À chaque pull request vers main
+
+### Exécuter les tests localement
+
+```bash
+# Installation des outils de test
+pip install flake8 pytest
+
+# Vérification du code
+flake8 .
+
+# Exécution des tests
+pytest
+```
+
+### Bonnes pratiques
+
+1. **Avant chaque commit** :
+   - Exécuter les tests localement
+   - Vérifier le style du code avec flake8
+   - Résoudre les conflits éventuels
+
+2. **Pour les pull requests** :
+   - Créer une branche pour chaque fonctionnalité
+   - Attendre la validation des tests
+   - Faire relire le code (si possible)
+
+3. **Maintenance** :
+   - Mettre à jour régulièrement les dépendances
+   - Vérifier les rapports de sécurité
+   - Maintenir une couverture de tests suffisante 
