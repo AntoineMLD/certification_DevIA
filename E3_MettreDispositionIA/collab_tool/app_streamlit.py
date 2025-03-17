@@ -1,74 +1,149 @@
 import streamlit as st
 import os
-import json
 from PIL import Image
+from datetime import datetime
+import hashlib
+from supabase import create_client
+import requests
+from io import BytesIO
+import random  # Ajouter en haut du fichier avec les autres imports
 
 # Configuration
-UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
-IMAGES_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'images')
+# Chemin vers le dossier d'images local
+IMAGES_DIR = os.path.join(os.path.dirname(__file__), "..", "images")
+GITHUB_RAW_URL = "https://raw.githubusercontent.com/AntoineMLD/certification_DevIA/main/E3_MettreDispositionIA/images/"
 
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
+# Configuration Supabase
+SUPABASE_URL = st.secrets["supabase_url"]
+SUPABASE_KEY = st.secrets["supabase_key"]
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Configuration de l'application
+MAX_DESCRIPTION_LENGTH = 500  # Limite de caractères par description
+MIN_DESCRIPTION_LENGTH = 3   # Minimum de caractères requis
+
+def init_db():
+    """Vérifie que la table existe dans Supabase."""
+    # Note: Avec Supabase, la table doit être créée manuellement dans l'interface
+    pass
+
+def compute_hash(verre_id, description, timestamp):
+    """Calcule un hash pour vérifier l'intégrité des données."""
+    data = f"{verre_id}{description}{timestamp}"
+    return hashlib.sha256(data.encode()).hexdigest()
 
 def get_descriptions():
-    """Charge les descriptions existantes depuis le fichier JSON."""
-    descriptions_file = os.path.join(UPLOAD_FOLDER, 'descriptions.json')
-    if os.path.exists(descriptions_file):
-        with open(descriptions_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {}
+    """Récupère toutes les descriptions depuis Supabase."""
+    try:
+        # Récupère toutes les descriptions triées par verre_id et date
+        response = supabase.table('descriptions').select('*').order('verre_id').order('created_at').execute()
+        
+        # Organise les descriptions par verre
+        descriptions = {}
+        for record in response.data:
+            verre_id = str(record['verre_id'])
+            description = record['description']
+            timestamp = record['created_at']
+            stored_hash = record['hash']
+            
+            # Vérifie l'intégrité des données
+            computed_hash = compute_hash(verre_id, description, timestamp)
+            if computed_hash != stored_hash:
+                # Log technique pour le débogage (visible dans les logs Streamlit)
+                print(f"""Erreur d'intégrité des données:
+                    Verre: {verre_id}
+                    Description: {description}
+                    Timestamp: {timestamp}
+                    Hash stocké: {stored_hash}
+                    Hash calculé: {computed_hash}
+                """)
+                continue
+                
+            if verre_id not in descriptions:
+                descriptions[verre_id] = []
+            descriptions[verre_id].append(description)
+        
+        return descriptions
+    except Exception as e:
+        print(f"Erreur technique: {str(e)}")  # Log technique
+        st.error("Désolé, nous ne pouvons pas charger les descriptions pour le moment.")
+        return {}
+
+def get_image_from_github(filename):
+    """Récupère une image depuis le dossier local."""
+    try:
+        image_path = os.path.join(IMAGES_DIR, filename)
+        return Image.open(image_path)
+    except Exception as e:
+        st.error(f"Erreur lors du chargement de l'image: {e}")
+        return None
+
+def validate_description(description):
+    """Valide une description avant de la sauvegarder."""
+    if len(description) < MIN_DESCRIPTION_LENGTH:
+        st.error(f"La description doit contenir au moins {MIN_DESCRIPTION_LENGTH} caractères.")
+        return False
+    if len(description) > MAX_DESCRIPTION_LENGTH:
+        st.error(f"La description ne doit pas dépasser {MAX_DESCRIPTION_LENGTH} caractères.")
+        return False
+    # Vérification basique anti-spam/injection
+    if '<script>' in description.lower() or 'javascript:' in description.lower():
+        return False
+    return True
+
+def save_description(verre_id, description):
+    """Sauvegarde une description dans Supabase avec validation."""
+    try:
+        if not validate_description(description):
+            return False
+            
+        # Ajoute un horodatage et un hash pour la sécurité
+        timestamp = datetime.now().isoformat()
+        hash_value = compute_hash(verre_id, description, timestamp)
+        
+        # Insère les données dans Supabase
+        data = {
+            'verre_id': verre_id,
+            'description': description,
+            'created_at': timestamp,
+            'hash': hash_value
+        }
+        
+        response = supabase.table('descriptions').insert(data).execute()
+        return True if response.data else False
+    
+    except Exception as e:
+        st.error(f"Erreur lors de la sauvegarde: {e}")
+        return False
 
 def get_image_list():
-    """Récupère la liste des images et les trie par nombre de descriptions croissant."""
+    """Récupère la liste des images et les trie par nombre de descriptions croissant avec randomisation."""
     images = []
     descriptions = get_descriptions()
     
-    for filename in os.listdir(IMAGES_FOLDER):
-        if filename.endswith('.png'):
-            try:
-                image_id = int(filename.split('_')[0])
-                # Compte le nombre de descriptions pour cette image
-                description_count = 0
-                if str(image_id) in descriptions:
-                    if isinstance(descriptions[str(image_id)], list):
-                        description_count = len(descriptions[str(image_id)])
-                    else:
-                        description_count = 1
-                
-                images.append({
-                    'id': image_id,
-                    'filename': filename,
-                    'description_count': description_count
-                })
-            except (ValueError, IndexError):
-                continue
+    # Parcourir le dossier d'images local
+    try:
+        for filename in os.listdir(IMAGES_DIR):
+            if filename.endswith('.png'):
+                try:
+                    image_id = int(filename.split('_')[0])
+                    # Compte le nombre de descriptions pour cette image
+                    description_count = len(descriptions.get(str(image_id), []))
+                    
+                    images.append({
+                        'id': image_id,
+                        'filename': filename,
+                        'description_count': description_count,
+                        'random_sort': random.random()  # Ajoute une valeur aléatoire pour le tri
+                    })
+                except (ValueError, IndexError):
+                    continue
+    except Exception as e:
+        st.error(f"Erreur lors de la lecture du dossier d'images: {e}")
+        return []
     
-    # Trie les images par nombre de descriptions croissant, puis par ID
-    return sorted(images, key=lambda x: (x['description_count'], x['id']))
-
-def save_description(verre_id, description):
-    """Sauvegarde une description dans le fichier JSON."""
-    descriptions_file = os.path.join(UPLOAD_FOLDER, 'descriptions.json')
-    descriptions = get_descriptions()
-    
-    # Convertir l'ID en string pour le stockage JSON
-    verre_id = str(verre_id)
-    
-    # Si c'est la première description pour cette image, créer une liste
-    if verre_id not in descriptions:
-        descriptions[verre_id] = []
-    elif not isinstance(descriptions[verre_id], list):
-        # Convertir une ancienne description unique en liste
-        descriptions[verre_id] = [descriptions[verre_id]]
-    
-    # Ajouter la nouvelle description à la liste
-    descriptions[verre_id].append(description)
-    
-    # Sauvegarder les descriptions
-    with open(descriptions_file, 'w', encoding='utf-8') as f:
-        json.dump(descriptions, f, ensure_ascii=False, indent=2)
-    
-    return True
+    # Trie d'abord par nombre de descriptions, puis utilise la valeur aléatoire pour les égalités
+    return sorted(images, key=lambda x: (x['description_count'], x['random_sort']))
 
 def resize_image(image, scale_percent=80):
     """Redimensionne l'image selon un pourcentage."""
@@ -77,6 +152,9 @@ def resize_image(image, scale_percent=80):
     return image.resize((width, height), Image.Resampling.LANCZOS)
 
 def main():
+    # Initialiser la base de données au démarrage
+    init_db()
+    
     st.set_page_config(
         page_title="Description des Verres",
         layout="wide",
@@ -157,7 +235,7 @@ def main():
             
             # Afficher l'image courante
             current_image = images[st.session_state.current_index]
-            image_path = os.path.join(IMAGES_FOLDER, current_image['filename'])
+            image_path = GITHUB_RAW_URL + current_image['filename']
             
             # Navigation et informations
             col1, col2, col3 = st.columns([1, 2, 1])
@@ -185,8 +263,9 @@ def main():
                     st.rerun()
             
             # Afficher l'image
-            image = Image.open(image_path)
-            st.image(image, caption=f"Verre {current_image['id']}")
+            image = get_image_from_github(current_image['filename'])
+            if image:
+                st.image(image, caption=f"Verre {current_image['id']}")
             
             # Afficher les descriptions existantes
             descriptions = get_descriptions()
