@@ -4,8 +4,8 @@ Ce module implémente un système de reconnaissance de gravures optiques pour ve
 
 ## Caractéristiques
 
-- API REST sécurisée par OAuth2/JWT
-- Interface utilisateur Gradio pour dessiner et reconnaître les gravures
+- API REST sécurisée par OAuth2/JWT pour l'intégration avec d'autres systèmes
+- Interface Tkinter pour dessiner et reconnaître les gravures (application desktop)
 - Application Streamlit dédiée pour une utilisation sur smartphone
 - Réseau siamois pour la génération d'embeddings
 - Algorithme de recherche par similarité amélioré
@@ -18,8 +18,7 @@ Ce module implémente un système de reconnaissance de gravures optiques pour ve
 ```mermaid
 graph TD
     A[Client] -->|Dessin| B[API FastAPI]
-    A -->|Interface Web| C[Gradio UI]
-    C -->|Soumission| B
+    A -->|Desktop| C[Tkinter UI]
     A -->|Smartphone| S[Streamlit App]
     S -->|Dessin| T[Traitement d'image]
     T -->|Variantes| V[Reconnaissance]
@@ -30,7 +29,7 @@ graph TD
     G -->|Recherche| H[Embeddings Base]
     G -->|Résultats| I[Top 5 Classes]
     I -->|JSON| B
-    I -->|HTML| C
+    C -->|Processus local| J[Reconnaissance]
     V -->|Résultats| S
     
     style F fill:#f9f,stroke:#333,stroke-width:2px
@@ -42,16 +41,14 @@ graph TD
 
 ```
 E3_MettreDispositionIA/
-├── app/                      # Code source de l'application
+├── app/                      # Code source de l'application principale
 │   ├── __init__.py           # Initialisation de l'application
 │   ├── data_augmentation.py  # Augmentation de données
 │   ├── embeddings_manager.py # Gestion des embeddings
-│   ├── generate_embeddings.py # Script pour générer les embeddings
 │   ├── main.py               # Point d'entrée FastAPI
 │   ├── model.py              # Modèle siamois
 │   ├── prepare_data.py       # Prétraitement des images
-│   ├── train.py              # Script d'entraînement du modèle
-│   └── ui.py                 # Interface Gradio
+│   └── train.py              # Script d'entraînement du modèle
 ├── data/                     # Données
 │   ├── raw_gravures/         # Images brutes par catégorie
 │   ├── processed/            # Images traitées
@@ -62,7 +59,9 @@ E3_MettreDispositionIA/
 │   └── siamese_model.pt      # Modèle standard
 ├── tests/                    # Tests unitaires
 ├── poc_smartphone/           # Application Streamlit pour smartphone
-├── Dockerfile                # Configuration Docker
+├── tkinter_draw_app.py       # Application desktop Tkinter
+├── admin_utils.py            # Utilitaires pour l'administration
+├── config.py                 # Configuration globale du projet
 ├── setup.bat                 # Script d'installation pour Windows
 ├── setup.sh                  # Script d'installation pour Linux/Mac
 ├── README.md                 # Documentation
@@ -77,7 +76,7 @@ flowchart LR
     B -->|data_augmentation.py| C[Images augmentées]
     B & C -->|train.py| D[Modèle entraîné]
     B -->|generate_embeddings.py| E[Embeddings]
-    D & E -->|main.py / UI| F[Application]
+    D & E -->|API FastAPI / Tkinter / Streamlit| F[Applications]
     
     style D fill:#f9f,stroke:#333,stroke-width:2px
     style E fill:#bbf,stroke:#333,stroke-width:2px
@@ -152,15 +151,20 @@ graph TD
     style V2 fill:#bbf,stroke:#333,stroke-width:2px
 ```
 
-### Démarrer l'application FastAPI
+### Démarrer l'application API REST
 
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 Ensuite, accédez à:
-- Interface Gradio: http://localhost:8000/gradio
 - Documentation API: http://localhost:8000/docs
+
+### Démarrer l'application desktop Tkinter
+
+```bash
+python tkinter_draw_app.py
+```
 
 ### Démarrer l'application Streamlit pour smartphone
 
@@ -227,6 +231,20 @@ GET /gravures
 ```
 Headers:
 - Authorization: Bearer {token}
+
+## Interfaces utilisateur
+
+### Application Tkinter (desktop)
+- Interface simple pour dessiner et reconnaître les gravures
+- Canvas de dessin avec contrôle de la taille du pinceau
+- Affichage des résultats de reconnaissance avec scores de similarité
+- Utilisation locale du modèle sans besoin de serveur
+
+### Application Streamlit (smartphone)
+- Interface adaptée aux écrans tactiles
+- Reconnaissance de 5 classes différentes
+- Affichage de la similarité pour chaque classe
+- Utilisation optimisée pour les appareils mobiles
 
 ## Améliorations récentes
 
