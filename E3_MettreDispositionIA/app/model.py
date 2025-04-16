@@ -258,6 +258,101 @@ class SiameseDataset(Dataset):
         
         return img1, img2, torch.FloatTensor([int(class1 == class2)])
 
+def evaluate_embeddings_quality(model, test_loader, device='cpu'):
+    """
+    Évalue la qualité des embeddings en calculant les distances intra-classe et inter-classe
+    
+    Args:
+        model: Modèle siamois entraîné
+        test_loader: DataLoader pour les données de test
+        device: Device sur lequel effectuer le calcul
+        
+    Returns:
+        Un dictionnaire avec les métriques de qualité
+    """
+    model.eval()
+    all_embeddings = []
+    all_labels = []
+    class_embeddings = {}
+    
+    print("Calcul des embeddings pour l'évaluation...")
+    with torch.no_grad():
+        for batch in test_loader:
+            # Support pour les deux types de datasets (standard et triplet)
+            if len(batch) == 3 and not isinstance(batch[2], torch.Tensor):
+                # Dataset triplet (anchor, positive, negative)
+                imgs = batch[0]
+                # Récupérer les labels à partir des chemins des fichiers
+                labels = [os.path.basename(os.path.dirname(path)) 
+                         for path, _ in test_loader.dataset.dataset.image_paths[:len(imgs)]]
+            else:
+                # Dataset standard (img1, img2, label)
+                imgs = batch[0]
+                # Récupérer les labels à partir des chemins des fichiers
+                labels = [os.path.basename(os.path.dirname(path)) 
+                         for path, _ in test_loader.dataset.dataset.image_paths[:len(imgs)]]
+            
+            # Calculer les embeddings
+            imgs = imgs.to(device)
+            embs = model.forward_one(imgs)
+            embs = embs.cpu().numpy()
+            
+            # Stocker les embeddings et labels
+            for i, (emb, label) in enumerate(zip(embs, labels)):
+                all_embeddings.append(emb)
+                all_labels.append(label)
+                
+                if label not in class_embeddings:
+                    class_embeddings[label] = []
+                class_embeddings[label].append(emb)
+    
+    # Convertir en arrays numpy
+    all_embeddings = np.array(all_embeddings)
+    
+    # Calculer les distances moyennes intra-classe
+    intra_class_distances = []
+    for label, embeddings in class_embeddings.items():
+        if len(embeddings) <= 1:
+            continue
+            
+        embeddings = np.array(embeddings)
+        for i in range(len(embeddings)):
+            for j in range(i+1, len(embeddings)):
+                dist = np.linalg.norm(embeddings[i] - embeddings[j])
+                intra_class_distances.append(dist)
+    
+    # Calculer les distances moyennes inter-classe
+    inter_class_distances = []
+    labels = list(class_embeddings.keys())
+    for i in range(len(labels)):
+        for j in range(i+1, len(labels)):
+            label1, label2 = labels[i], labels[j]
+            for emb1 in class_embeddings[label1]:
+                for emb2 in class_embeddings[label2]:
+                    dist = np.linalg.norm(emb1 - emb2)
+                    inter_class_distances.append(dist)
+    
+    # Calculer les statistiques
+    avg_intra_class = np.mean(intra_class_distances) if intra_class_distances else 0
+    avg_inter_class = np.mean(inter_class_distances) if inter_class_distances else 0
+    min_inter_class = np.min(inter_class_distances) if inter_class_distances else 0
+    max_intra_class = np.max(intra_class_distances) if intra_class_distances else 0
+    
+    # Calculer le ratio (distance inter / distance intra)
+    # Un ratio plus élevé indique de meilleurs embeddings
+    ratio = avg_inter_class / avg_intra_class if avg_intra_class > 0 else 0
+    
+    # Retourner les résultats
+    results = {
+        "avg_intra_class_distance": avg_intra_class,
+        "avg_inter_class_distance": avg_inter_class,
+        "min_inter_class_distance": min_inter_class,
+        "max_intra_class_distance": max_intra_class,
+        "quality_ratio": ratio
+    }
+    
+    return results
+
 def save_model(model, save_path):
     """
     Sauvegarde un modèle siamois dans un fichier

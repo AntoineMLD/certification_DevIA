@@ -6,25 +6,31 @@ import albumentations as A
 from pathlib import Path
 
 def create_augmentation_pipeline():
-    """Crée le pipeline d'augmentation de données adapté aux dessins manuels"""
+    """Crée le pipeline d'augmentation de données adapté aux dessins de gravure"""
     return A.Compose([
-        # Légères rotations pour simuler les variations de dessin
-        A.Rotate(limit=5, p=0.3),
+        # Rotations pour simuler les variations d'orientation
+        A.Rotate(limit=15, p=0.5),
         
-        # Très légères translations pour simuler les variations de position
-        A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.05, rotate_limit=0, p=0.3),
+        # Translations pour simuler les variations de position
+        A.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.1, rotate_limit=0, p=0.4),
         
-        # Légères variations d'épaisseur du trait
-        A.GaussianBlur(blur_limit=(1, 2), p=0.2),
+        # Variations d'épaisseur du trait
+        A.GaussianBlur(blur_limit=(1, 3), p=0.3),
         
-        # Légères variations de contraste pour simuler différentes pressions du stylo
-        A.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.2),
+        # Variations de contraste pour simuler différentes pressions
+        A.RandomBrightnessContrast(brightness_limit=0.15, contrast_limit=0.15, p=0.3),
         
-        # Légères déformations élastiques pour simuler les variations naturelles du dessin
-        A.ElasticTransform(alpha=120, sigma=120 * 0.05, p=0.2),
+        # Légère déformation élastique pour simuler variations naturelles du dessin
+        A.ElasticTransform(alpha=100, sigma=100 * 0.05, alpha_affine=5, p=0.3),
+        
+        # Légère distorsion perspective
+        A.Perspective(scale=(0.05, 0.1), p=0.2),
+        
+        # Légère variation d'échelle
+        A.RandomScale(scale_limit=0.1, p=0.3),
     ])
 
-def augment_image(image, transform, num_augmentations=3):
+def augment_image(image, transform, num_augmentations=5):
     """Applique les augmentations à une image"""
     augmented_images = []
     
@@ -38,7 +44,7 @@ def augment_image(image, transform, num_augmentations=3):
     
     return augmented_images
 
-def process_directory(input_dir, output_dir, num_augmentations=3):
+def process_directory(input_dir, output_dir, num_augmentations=5):
     """Traite tous les fichiers d'un répertoire"""
     # Crée le pipeline d'augmentation
     transform = create_augmentation_pipeline()
@@ -101,7 +107,7 @@ def main():
         return
     
     print("Début de l'augmentation des données...")
-    process_directory(input_dir, output_dir)
+    process_directory(input_dir, output_dir, num_augmentations=5)
     print("Augmentation des données terminée!")
 
 if __name__ == "__main__":

@@ -20,12 +20,12 @@ CANVAS_WIDTH = 300
 CANVAS_HEIGHT = 300
 OUTPUT_SIZE = 64
 BRUSH_SIZE = 3
-SYMBOL_TYPE = "symbole"  # Dossier unique pour tous les dessins
 IMAGE_SIZE = 64  # Taille des images attendue par le modèle
 
 # Charger le modèle
 @st.cache_resource
 def load_model_only():
+    """Charge le modèle Siamese pour la reconnaissance des gravures"""
     try:
         # Obtenir le chemin absolu du répertoire principal du projet
         project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -53,14 +53,14 @@ def load_model_only():
         st.error(traceback.format_exc())
         return None, "cpu"
 
-# Prétraiter l'image pour le modèle
-def preprocess_image(img):
+def preprocess_image(image):
+    """Prétraite l'image pour le modèle"""
     # Convertir en niveaux de gris si nécessaire
-    if img.mode != "L":
-        img = img.convert("L")
+    if image.mode != "L":
+        image = image.convert("L")
     
     # Amélioration des contrastes
-    img_array = np.array(img)
+    img_array = np.array(image)
     
     # Appliquer un filtre gaussien pour réduire le bruit
     img_array = cv2.GaussianBlur(img_array, (3, 3), 0)
@@ -79,15 +79,14 @@ def preprocess_image(img):
     
     return img_tensor
 
-# Charger toutes les images de référence et générer leurs embeddings
 @st.cache_data
 def load_reference_images(_model, _device):
+    """Charge les images de référence et génère leurs embeddings"""
     st.info("Chargement des images de référence...")
     
     reference_images = []
     
     # Obtenir le chemin absolu du répertoire principal du projet
-    # Remonter d'un niveau par rapport au répertoire poc_smartphone
     project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     
     # Afficher le chemin du projet pour débogage
@@ -99,14 +98,10 @@ def load_reference_images(_model, _device):
     raw_dir = os.path.join(project_dir, "E3_MettreDispositionIA", "data", "raw_gravures")
     
     # Liste des dossiers à vérifier
-    dirs_to_check = [
-        processed_dir,
-        augmented_dir,
-        raw_dir
-    ]
+    dirs_to_check = [processed_dir, augmented_dir, raw_dir]
     
-    # Fonction pour traiter un dossier
     def process_directory(base_dir):
+        """Traite un dossier pour extraire les images et leurs embeddings"""
         if not os.path.exists(base_dir):
             st.warning(f"Le dossier {base_dir} n'existe pas.")
             return
@@ -125,7 +120,7 @@ def load_reference_images(_model, _device):
         for class_name in classes:
             class_dir = os.path.join(base_dir, class_name)
             
-            # Trouver toutes les images de cette classe (limiter à 10 par classe pour éviter de surcharger)
+            # Trouver toutes les images de cette classe
             image_files = glob.glob(os.path.join(class_dir, "*.png")) + \
                          glob.glob(os.path.join(class_dir, "*.jpg")) + \
                          glob.glob(os.path.join(class_dir, "*.jpeg"))
@@ -136,7 +131,7 @@ def load_reference_images(_model, _device):
                 
             st.write(f"Classe {class_name}: {len(image_files)} images trouvées")
             
-            # Prendre un échantillon aléatoire si trop d'images (max 10 par classe)
+            # Limiter à 10 images par classe pour éviter de surcharger
             if len(image_files) > 10:
                 import random
                 random.shuffle(image_files)
@@ -170,29 +165,28 @@ def load_reference_images(_model, _device):
     st.success(f"{len(reference_images)} images de référence chargées")
     return reference_images
 
-# Générer plusieurs variantes de l'image dessinée pour la reconnaissance
-def generate_variants(img):
+def generate_variants(image):
     """Génère plusieurs variantes de l'image pour améliorer la reconnaissance"""
     variants = []
-    img_array = np.array(img)
+    img_array = np.array(image)
     
     # Image originale
     variants.append(img_array)
     
     # Rotation à 5 degrés
     rows, cols = img_array.shape
-    M = cv2.getRotationMatrix2D((cols/2, rows/2), 5, 1)
-    rotated = cv2.warpAffine(img_array, M, (cols, rows))
+    rotation_matrix = cv2.getRotationMatrix2D((cols/2, rows/2), 5, 1)
+    rotated = cv2.warpAffine(img_array, rotation_matrix, (cols, rows))
     variants.append(rotated)
     
     # Rotation à -5 degrés
-    M = cv2.getRotationMatrix2D((cols/2, rows/2), -5, 1)
-    rotated = cv2.warpAffine(img_array, M, (cols, rows))
+    rotation_matrix = cv2.getRotationMatrix2D((cols/2, rows/2), -5, 1)
+    rotated = cv2.warpAffine(img_array, rotation_matrix, (cols, rows))
     variants.append(rotated)
     
     # Léger décalage
-    M = np.float32([[1, 0, 3], [0, 1, 3]])
-    shifted = cv2.warpAffine(img_array, M, (cols, rows))
+    translation_matrix = np.float32([[1, 0, 3], [0, 1, 3]])
+    shifted = cv2.warpAffine(img_array, translation_matrix, (cols, rows))
     variants.append(shifted)
     
     # Légère dilatation
@@ -200,32 +194,31 @@ def generate_variants(img):
     dilated = cv2.dilate(img_array, kernel, iterations=1)
     variants.append(dilated)
     
-    # Léger érosion
+    # Légère érosion
     eroded = cv2.erode(img_array, kernel, iterations=1)
     variants.append(eroded)
     
     return variants
 
-# Fonction pour trouver les images les plus similaires avec vote
 def find_similar_images(query_embedding, reference_images, top_n=5):
+    """Trouve les images les plus similaires en utilisant un système de vote"""
     if not reference_images:
         return []
     
     # Tableau pour stocker les votes
     class_votes = {}
     
-    # Calculer la similarité avec tous les embeddings et le score ajusté
+    # Calculer la similarité avec tous les embeddings
     similarities = []
     
     for ref_img in reference_images:
         # Distance euclidienne
         distance = np.linalg.norm(query_embedding - ref_img['embedding'])
         
-        # Convertir en similarité
-        # Une fonction exponentielle décroissante plus agressive
+        # Convertir en similarité (fonction exponentielle décroissante)
         similarity = np.exp(-distance * 1.5)  # Facteur 1.5 pour accentuer les différences
         
-        # Augmenter les similarités élevées et diminuer les faibles
+        # Améliorer les similarités
         boosted_similarity = similarity**2 if similarity > 0.5 else similarity**3
         
         # Ajouter à la liste des similarités
@@ -248,235 +241,238 @@ def find_similar_images(query_embedding, reference_images, top_n=5):
     filtered_results = []
     
     for class_name in top_classes:
-        # Trouver la meilleure image de cette classe
-        best_match = None
-        best_score = -1
-        
-        for ref_img, similarity in similarities:
-            if ref_img['class'] == class_name and similarity > best_score:
-                best_match = (ref_img, similarity)
-                best_score = similarity
-        
-        if best_match:
-            filtered_results.append(best_match)
+        # Prendre les meilleures images de cette classe
+        class_images = [(img, score) for img, score in similarities if img['class'] == class_name]
+        filtered_results.extend(class_images[:3])  # Max 3 images par classe
     
-    return filtered_results
+    # Retrier par similarité
+    filtered_results.sort(key=lambda x: x[1], reverse=True)
+    
+    # Limiter au nombre demandé
+    return filtered_results[:top_n]
 
-# Fonction pour créer les répertoires nécessaires
-def ensure_directories():
-    base_dir = Path("drawings")
-    base_dir.mkdir(exist_ok=True)
+def save_image(image_data, symbol_type="symbole"):
+    """Sauvegarde l'image dessinée dans le dossier spécifié
     
-    # Un seul dossier pour tous les dessins
-    symbol_dir = base_dir / SYMBOL_TYPE
-    symbol_dir.mkdir(exist_ok=True)
+    Args:
+        image_data: Données de l'image à sauvegarder
+        symbol_type: Type de symbole/dossier où sauvegarder l'image
     
-    return base_dir
-
-# Fonction pour enregistrer l'image
-def save_image(image_data):
-    # Créer les répertoires
-    drawings_dir = ensure_directories()
+    Returns:
+        Le chemin du fichier sauvegardé ou None en cas d'erreur
+    """
+    # Créer le dossier drawings s'il n'existe pas
+    drawings_dir = os.path.join(os.path.dirname(__file__), "drawings")
+    if not os.path.exists(drawings_dir):
+        os.makedirs(drawings_dir)
+    
+    # Créer le sous-dossier pour le type de symbole
+    symbol_dir = os.path.join(drawings_dir, symbol_type)
+    if not os.path.exists(symbol_dir):
+        os.makedirs(symbol_dir)
     
     # Générer un nom de fichier unique
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{SYMBOL_TYPE}_{timestamp}.png"
-    filepath = drawings_dir / SYMBOL_TYPE / filename
+    filename = f"{symbol_type}_{timestamp}.png"
+    filepath = os.path.join(symbol_dir, filename)
     
-    # Convertir les données canvas en image PIL
-    img_array = image_data.image_data
-    
-    # Convertir l'array numpy en image PIL
-    img = Image.fromarray(img_array.astype('uint8'))
-    
-    # Convertir en noir et blanc si nécessaire
-    if img.mode != "L":
-        img = img.convert("L")
-    
-    # Redimensionner à 64x64 pixels
-    img_resized = img.resize((OUTPUT_SIZE, OUTPUT_SIZE), Image.LANCZOS)
-    
-    # Sauvegarder l'image
-    img_resized.save(filepath)
-    
-    return filepath, img_resized
-
-# Configuration de la page Streamlit
-st.set_page_config(
-    page_title="Reconnaissance de Gravures",
-    page_icon="✏️",
-    layout="centered"
-)
+    try:
+        # Convertir l'image en niveaux de gris et la sauvegarder
+        pil_image = Image.fromarray(image_data).convert("L")
+        pil_image.save(filepath)
+        st.success(f"Image sauvegardée: {filepath}")
+        return filepath
+    except Exception as e:
+        st.error(f"Erreur lors de la sauvegarde de l'image: {e}")
+        return None
 
 def main():
-    st.title("Reconnaissance de gravures optiques")
+    """Fonction principale de l'application"""
+    # Titre de l'application
+    st.title("Reconnaissance de Gravures Optiques")
+    st.write("Dessinez une gravure optique pour la reconnaître")
     
     # Charger le modèle
     model, device = load_model_only()
     
-    # Charger les images de référence
-    if model is not None:
-        reference_images = load_reference_images(model, device)
-    else:
-        reference_images = []
-        st.error("Impossible de charger les images de référence sans modèle.")
+    if model is None:
+        st.error("Impossible de charger le modèle. Vérifiez les logs pour plus d'informations.")
+        return
     
-    # Initialiser l'état de la session pour le canvas
-    if 'canvas_key' not in st.session_state:
-        st.session_state.canvas_key = 0
+    # Chargement des images de référence
+    reference_images = load_reference_images(_model=model, _device=device)
     
-    # Initialiser l'état pour les résultats de reconnaissance
-    if 'recognition_results' not in st.session_state:
-        st.session_state.recognition_results = None
+    if not reference_images:
+        st.warning("Aucune image de référence trouvée. La reconnaissance ne sera pas possible.")
     
-    # Zone de dessin
+    # Interface de dessin
     st.subheader("Zone de dessin")
-    st.caption("Dessinez votre symbole ici")
+    st.write("Utilisez la souris pour dessiner une gravure")
     
-    # Canvas dessinable avec taille de pinceau fixe à 3
+    # Paramètres du canvas
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        drawing_mode = st.selectbox(
+            "Mode de dessin:",
+            ("freedraw", "line", "rect", "circle"),
+            index=0
+        )
+        
+        stroke_width = st.slider("Largeur du trait:", 1, 10, BRUSH_SIZE)
+    
+    with col2:
+        # Ajouter un sélecteur pour le dossier de sauvegarde
+        symbol_type = st.selectbox(
+            "Dossier de sauvegarde:",
+            ("symbole", "autres", "cercle", "triangle", "carré", "losange"),
+            index=0
+        )
+        
+        save_option = st.checkbox("Sauvegarder après reconnaissance", value=True)
+        
+        # Bouton pour sauvegarder immédiatement sans reconnaissance
+        st.write("ou")
+        save_only_mode = st.checkbox("Mode sauvegarde uniquement", value=False,
+                                    help="Activer pour sauvegarder sans faire de reconnaissance")
+    
+    # Canvas pour le dessin
     canvas_result = st_canvas(
         fill_color="rgba(255, 255, 255, 0)",
-        stroke_width=BRUSH_SIZE,
+        stroke_width=stroke_width,
         stroke_color="black",
         background_color="white",
         height=CANVAS_HEIGHT,
         width=CANVAS_WIDTH,
-        drawing_mode="freedraw",
-        key=f"canvas_{st.session_state.canvas_key}",
+        drawing_mode=drawing_mode,
+        key="canvas",
     )
     
-    # Actions
+    # Actions sur le dessin
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("Enregistrer et Reconnaître", type="primary"):
-            if canvas_result.image_data is not None:
-                # Vérifier s'il y a un dessin (pas juste un canvas blanc)
-                if not np.all(canvas_result.image_data == 255):
-                    filepath, img_resized = save_image(canvas_result)
-                    st.success(f"Gravure enregistrée: {filepath.name}")
-                    
-                    # Reconnaissance de la gravure
-                    if model is not None and reference_images:
-                        with st.spinner("Reconnaissance en cours..."):
-                            # Générer plusieurs variantes de l'image
-                            variants = generate_variants(img_resized)
-                            
-                            # Pour chaque variante, calculer un embedding et faire la reconnaissance
-                            all_results = []
-                            
-                            for variant in variants:
-                                variant_img = Image.fromarray(variant.astype('uint8'))
-                                img_tensor = preprocess_image(variant_img)
-                                img_tensor = img_tensor.to(device)
-                                
-                                with torch.no_grad():
-                                    embedding = model.forward_one(img_tensor).cpu().numpy()[0]
-                                
-                                # Calculer les similarités pour cette variante
-                                variant_results = find_similar_images(embedding, reference_images, top_n=5)
-                                all_results.extend(variant_results)
-                            
-                            # Fusionner les résultats et prendre les 5 meilleures classes
-                            # Créer un dictionnaire pour stocker la meilleure similarité par classe
-                            class_best = {}
-                            for ref_img, similarity in all_results:
-                                class_name = ref_img['class']
-                                if class_name not in class_best or similarity > class_best[class_name][1]:
-                                    class_best[class_name] = (ref_img, similarity)
-                            
-                            # Convertir en liste et trier
-                            combined_results = list(class_best.values())
-                            combined_results.sort(key=lambda x: x[1], reverse=True)
-                            
-                            # Prendre les 5 premières classes différentes
-                            results = combined_results[:5]
-                            st.session_state.recognition_results = results
-                    else:
-                        st.warning("Le modèle n'a pas été chargé correctement ou aucune image de référence n'est disponible.")
-                    
-                    # Effacer après sauvegarde
-                    st.session_state.canvas_key += 1
-                    st.rerun()
-                else:
-                    st.warning("Le canvas est vide, rien à enregistrer.")
+        if st.button("Effacer"):
+            # Réinitialiser le canvas (via le key)
+            st.experimental_rerun()
     
     with col2:
-        if st.button("Effacer"):
-            # Générer une nouvelle clé pour forcer la réinitialisation du canvas
-            st.session_state.canvas_key += 1
-            st.session_state.recognition_results = None
-            st.rerun()
+        # Bouton pour sauvegarder directement
+        if st.button("Sauvegarder maintenant"):
+            if canvas_result.image_data is None:
+                st.warning("Veuillez dessiner quelque chose d'abord!")
+            else:
+                saved_path = save_image(canvas_result.image_data, symbol_type)
+                if saved_path:
+                    st.success(f"Image sauvegardée dans le dossier '{symbol_type}'")
     
-    # Afficher les résultats de reconnaissance
-    if st.session_state.recognition_results is not None:
-        st.subheader("Résultats de la reconnaissance")
+    # Si mode sauvegarde uniquement, on s'arrête ici
+    if save_only_mode:
+        st.info("Mode sauvegarde uniquement activé. Appuyez sur 'Sauvegarder maintenant' pour enregistrer votre dessin.")
+        return
+    
+    # Reconnaissance de la gravure
+    if st.button("Reconnaître la gravure"):
+        if canvas_result.image_data is None:
+            st.warning("Veuillez dessiner quelque chose d'abord!")
+            return
         
-        results = st.session_state.recognition_results
-        
-        if results:
-            # Utiliser deux lignes pour afficher les 5 meilleures correspondances
-            # Première ligne: 3 colonnes
-            # Deuxième ligne: 2 colonnes
+        try:
+            # Récupérer l'image du canvas
+            img_data = canvas_result.image_data
             
-            if len(results) > 0:
-                st.write("Top 5 correspondances (classes différentes):")
-                
-                # Première ligne avec 3 colonnes
-                row1_cols = st.columns(3)
-                
-                # Traiter les 3 premiers résultats
-                for i in range(min(3, len(results))):
-                    with row1_cols[i]:
-                        ref_img, similarity = results[i]
-                        class_name = ref_img['class']
-                        img_path = ref_img['path']
-                        
-                        st.metric(f"Match #{i+1}", class_name, f"{similarity:.2%}")
-                        
-                        # Essayer d'afficher l'image
-                        try:
-                            if os.path.isfile(img_path):
-                                img = Image.open(img_path)
-                                st.image(img, caption=f"Similarité: {similarity:.2%}")
-                            else:
-                                st.write(f"Image introuvable")
-                        except Exception as e:
-                            st.write(f"Erreur d'affichage")
-                
-                # Deuxième ligne avec 2 colonnes si nécessaire
-                if len(results) > 3:
-                    row2_cols = st.columns(2)
+            # Convertir en niveaux de gris
+            img_gray = Image.fromarray(img_data).convert("L")
+            
+            # Afficher l'image
+            st.image(img_gray, caption="Gravure dessinée", width=150)
+            
+            # Générer des variantes de l'image
+            variants = generate_variants(img_gray)
+            
+            # Collecter les votes de tous les variants
+            all_results = []
+            
+            # Fonction pour calculer l'embedding et trouver les similarités
+            with st.spinner("Analyse en cours..."):
+                # Traiter chaque variante
+                for i, variant in enumerate(variants):
+                    # Convertir en PIL Image si ce n'est pas déjà le cas
+                    if not isinstance(variant, Image.Image):
+                        variant = Image.fromarray(variant)
                     
-                    # Traiter les 2 résultats restants
-                    for i in range(3, min(5, len(results))):
-                        col_idx = i - 3  # 0 ou 1
-                        with row2_cols[col_idx]:
-                            ref_img, similarity = results[i]
-                            class_name = ref_img['class']
-                            img_path = ref_img['path']
-                            
-                            st.metric(f"Match #{i+1}", class_name, f"{similarity:.2%}")
-                            
-                            # Essayer d'afficher l'image
+                    # Prétraiter l'image pour le modèle
+                    img_tensor = preprocess_image(variant)
+                    img_tensor = img_tensor.to(device)
+                    
+                    # Calculer l'embedding avec le modèle
+                    with torch.no_grad():
+                        embedding = model.forward_one(img_tensor).cpu().numpy()[0]
+                    
+                    # Trouver les images similaires
+                    results = find_similar_images(embedding, reference_images, top_n=3)
+                    all_results.extend(results)
+                
+                # Agréger les résultats en comptant les occurrences de chaque classe
+                class_votes = {}
+                for img, score in all_results:
+                    class_name = img['class']
+                    if class_name not in class_votes:
+                        class_votes[class_name] = 0
+                    class_votes[class_name] += score
+                
+                # Trier les classes par nombre de votes
+                sorted_classes = sorted(class_votes.items(), key=lambda x: x[1], reverse=True)
+                
+                # Afficher les résultats
+                st.subheader("Résultats de la reconnaissance")
+                
+                if sorted_classes:
+                    # Prendre la meilleure correspondance
+                    best_match = sorted_classes[0][0]
+                    confidence = sorted_classes[0][1] / sum(score for _, score in sorted_classes)
+                    
+                    st.success(f"Gravure reconnue: **{best_match}** (confiance: {confidence:.2%})")
+                    
+                    # Afficher toutes les classes détectées avec leur score
+                    st.write("Toutes les correspondances:")
+                    for class_name, votes in sorted_classes:
+                        normalized_score = votes / sum(score for _, score in sorted_classes)
+                        st.write(f"- {class_name}: {normalized_score:.2%}")
+                    
+                    # Afficher les images les plus similaires
+                    st.subheader("Images similaires")
+                    
+                    # Trouver les meilleures images pour chaque classe
+                    shown_images = set()
+                    cols = st.columns(3)
+                    col_idx = 0
+                    
+                    for img, score in sorted(all_results, key=lambda x: x[1], reverse=True):
+                        img_path = img['path']
+                        if img_path not in shown_images and len(shown_images) < 3:
+                            shown_images.add(img_path)
                             try:
-                                if os.path.isfile(img_path):
-                                    img = Image.open(img_path)
-                                    st.image(img, caption=f"Similarité: {similarity:.2%}")
-                                else:
-                                    st.write(f"Image introuvable")
+                                image = Image.open(img_path)
+                                with cols[col_idx]:
+                                    st.image(image, caption=f"{img['class']} ({score:.2f})", width=100)
+                                    col_idx = (col_idx + 1) % 3
                             except Exception as e:
-                                st.write(f"Erreur d'affichage")
-        else:
-            st.info("Aucune correspondance trouvée.")
-    
-    # Instructions minimales
-    with st.expander("Instructions"):
-        st.markdown("""
-        1. Dessinez un symbole dans la zone de dessin
-        2. Cliquez sur 'Enregistrer et Reconnaître' pour identifier le symbole
-        3. Cliquez sur 'Effacer' pour recommencer
-        """)
+                                st.warning(f"Impossible d'afficher l'image {img_path}: {e}")
+                else:
+                    st.warning("Aucune correspondance trouvée")
+            
+            # Sauvegarder l'image si demandé
+            if save_option:
+                saved_path = save_image(img_data, symbol_type)
+                if saved_path:
+                    st.write(f"Image sauvegardée dans le dossier '{symbol_type}' pour référence ultérieure")
+        
+        except Exception as e:
+            st.error(f"Une erreur s'est produite lors de la reconnaissance: {e}")
+            st.error("Vérifiez que le modèle est correctement chargé et que les images de référence sont disponibles.")
+            import traceback
+            st.error(traceback.format_exc())
 
 if __name__ == "__main__":
     main() 

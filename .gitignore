@@ -1,6 +1,7 @@
 # Python
 E3_MettreDispositionIA/data
 E3_MettreDispositionIA/model
+E3_MettreDispositionIA/archive
 
 __pycache__/
 *.py[cod]
