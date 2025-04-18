@@ -1,298 +1,161 @@
-# Reconnaissance de Gravures avec Deep Learning
+# 🔍 Application de Recherche de Gravures Similaires
 
-Ce projet implémente un système de reconnaissance de gravures basé sur des techniques modernes de deep learning. Le système utilise principalement un modèle EfficientNet optimisé avec Triplet Loss pour identifier et classifier différents types de gravures, même avec peu d'exemples par classe.
+![Logo du projet](https://img.shields.io/badge/IA-Visuelle-blue)
+![Python](https://img.shields.io/badge/Python-3.8+-green)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.22+-red)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-orange)
 
-## Fonctionnalités principales
+## 📋 Table des matières
+- [Introduction](#introduction)
+- [Architecture du projet](#architecture-du-projet)
+- [Fonctionnalités](#fonctionnalités)
+- [Installation](#installation)
+- [Utilisation](#utilisation)
+- [Déploiement](#déploiement)
+- [Structure du code](#structure-du-code)
+- [Pipeline de données](#pipeline-de-données)
+- [Modèle d'IA](#modèle-dia)
+- [Interface utilisateur](#interface-utilisateur)
 
-- **Reconnaissance précise** de multiples classes de gravures
-- **Interface utilisateur intuitive** avec Streamlit
-- **Pipeline d'augmentation de données** pour améliorer la robustesse du modèle
-- **Équilibrage automatique des classes minoritaires**
-- **Analyse détaillée des erreurs** pour améliorer continuellement les performances
-- **Embeddings de haute qualité** pour les comparaisons d'images
+## Introduction
 
-## Architecture du système
+Cette application permet aux utilisateurs de dessiner des gravures à main levée et de trouver automatiquement les gravures les plus similaires dans une base de données. Elle utilise un modèle d'apprentissage profond basé sur EfficientNet et la technique de Triplet Loss pour apprendre des représentations vectorielles (embeddings) des images.
 
-```mermaid
-graph TD
-    A[Images brutes] --> B[Augmentation et prétraitement]
-    B --> C[Entraînement du modèle]
-    C --> D[Modèle EfficientNet + Triplet Loss]
-    D --> E[Évaluation et analyse d'erreurs]
-    D --> F[Application Streamlit]
-    
-    subgraph "Pipeline de données"
-        A
-        B
-    end
-    
-    subgraph "Entraînement"
-        C
-    end
-    
-    subgraph "Déploiement et analyse"
-        E
-        F
-    end
-```
-
-## Structure du projet
+## Architecture du projet
 
 ```
 E3_MettreDispositionIA/
-│
-├── app/                             # Code source principal
-│   ├── efficientnet_model.py        # Modèle EfficientNet avec Triplet Loss
-│   ├── data_augmentation.py         # Fonctions d'augmentation de données
-│   ├── train_efficientnet.py        # Script d'entraînement du modèle
-│   ├── evaluate_model.py            # Évaluation des performances
-│   ├── analyze_errors.py            # Analyse détaillée des erreurs
-│   ├── oversample_small_classes.py  # Rééquilibrage des classes minoritaires
-│   └── model.py                     # Modèle Siamese (alternative)
-│
-├── data/                            # Données pour l'entraînement et validation
-│   ├── raw_gravures/                # Images brutes par classe 
-│   └── augmented_gravures/          # Images augmentées par classe
-│
-├── model/                           # Modèles entraînés
-│   └── best_efficientnet_triplet.pt # Meilleur modèle EfficientNet
-│
-├── archive/                         # Scripts et modèles archivés
-│
-├── streamlit_app/                   # Ressources pour l'application
-│   └── drawings/                    # Dessins sauvegardés
-│
-├── embeddings/                      # Visualisations d'embeddings
-│
-├── streamlit_app.py                 # Application Streamlit principale
-├── run_gravure_pipeline.py          # Pipeline complet d'entraînement
-├── config.py                        # Configuration globale
-├── start_streamlit_app.sh           # Script de lancement de l'application
-├── requirements.txt                 # Dépendances du projet
-└── README.md                        # Documentation principale
+├── main/
+│   ├── app/
+│   │   └── app.py                 # Application Streamlit
+│   ├── models/
+│   │   ├── efficientnet_triplet.py # Modèle EfficientNet
+│   │   ├── efficientnet_triplet.pth # Modèle entraîné
+│   │   ├── train.py               # Script d'entraînement
+│   │   └── losses/
+│   │       └── triplet_losses.py   # Implémentation de la Triplet Loss
+│   ├── datasets/
+│   │   └── triplet_dataset.py      # Dataset pour l'entraînement
+│   ├── data/
+│   │   ├── raw_gravures/           # Données brutes
+│   │   ├── augmented_gravures/     # Données augmentées
+│   │   └── oversampled_gravures/   # Données équilibrées
+│   ├── augment_gravures.py         # Script d'augmentation
+│   └── oversample_classes.py       # Script d'équilibrage
+└── requirements.txt                 # Dépendances
 ```
+
+## Fonctionnalités
+
+- 🎨 Interface de dessin à main levée
+- 🔍 Recherche de gravures similaires en temps réel
+- 📊 Affichage des 10 résultats les plus pertinents
+- 🧠 Modèle d'IA entraîné sur des gravures historiques
+- 📱 Interface utilisateur intuitive
 
 ## Installation
 
-1. Cloner le dépôt:
+1. Clonez le dépôt :
 ```bash
-git clone <URL_DU_REPO>
+git clone https://github.com/votre-utilisateur/E3_MettreDispositionIA.git
 cd E3_MettreDispositionIA
 ```
 
-2. Installer les dépendances:
+2. Installez les dépendances :
 ```bash
 pip install -r requirements.txt
 ```
 
-## Pipeline complet automatisé
-
-Le projet inclut un script `run_gravure_pipeline.py` qui automatise l'ensemble du processus de traitement des gravures, de l'augmentation des données jusqu'au lancement de l'application.
-
-### Étapes du pipeline
-
-1. **Augmentation des données** - Génère des variations des images d'origine pour améliorer la robustesse du modèle
-2. **Équilibrage des classes sous-représentées** - Identifie et équilibre les classes avec trop peu d'exemples
-3. **Entraînement du modèle** - Entraîne le modèle EfficientNet avec les paramètres optimaux
-4. **Évaluation des performances** - Évalue la précision du modèle et génère des rapports
-5. **Analyse des erreurs** - Identifie les confusions entre classes et crée des visualisations explicatives
-6. **Lancement de l'application** - Démarre l'interface Streamlit (optionnel)
-
-### Utilisation du pipeline
-
-Pour exécuter le pipeline complet avec les paramètres par défaut:
-
+3. Lancez l'application :
 ```bash
-python run_gravure_pipeline.py
+cd main
+streamlit run app/app.py
 ```
 
-#### Options principales
+## Utilisation
 
+1. Ouvrez l'application dans votre navigateur (généralement à l'adresse http://localhost:8501)
+2. Dessinez une gravure dans la zone de dessin
+3. Cliquez sur le bouton "🔍 Rechercher les gravures similaires"
+4. Consultez les résultats affichés avec leur score de similarité
+
+## Déploiement
+
+Pour déployer l'application et la rendre accessible à des utilisateurs externes, vous avez plusieurs options :
+
+### Option 1 : Streamlit Cloud (recommandé)
+1. Créez un compte sur [Streamlit Cloud](https://streamlit.io/cloud)
+2. Connectez votre dépôt GitHub
+3. Sélectionnez le fichier `app/app.py` comme point d'entrée
+4. Déployez l'application
+
+### Option 2 : Heroku
+1. Créez un fichier `Procfile` à la racine du projet :
+```
+web: cd main && streamlit run app/app.py
+```
+2. Déployez sur Heroku :
 ```bash
-# Exécution complète avec lancement de l'application à la fin
-python run_gravure_pipeline.py --launch_streamlit
-
-# Ajuster le nombre d'époques et la taille du batch
-python run_gravure_pipeline.py --epochs 100 --batch_size 32
-
-# Personnaliser les seuils pour l'équilibrage des classes
-python run_gravure_pipeline.py --min_threshold 15 --target_count 30
-
-# Sauter certaines étapes (si déjà réalisées)
-python run_gravure_pipeline.py --skip_augmentation --skip_oversampling
+heroku create votre-app-name
+git push heroku main
 ```
 
-#### Options avancées
-
+### Option 3 : Serveur personnel
+1. Installez les dépendances sur votre serveur
+2. Lancez l'application avec :
 ```bash
-# Configurer les paramètres d'entraînement avancés
-python run_gravure_pipeline.py --progressive_unfreeze --initial_freeze 0.7 --onecycle --mining_type hard
-
-# Spécifier des dossiers personnalisés
-python run_gravure_pipeline.py --input_dir "mon/dossier/gravures" --output_dir "mon/dossier/augmenté"
+streamlit run app/app.py --server.port 8501 --server.address 0.0.0.0
 ```
+3. Configurez un reverse proxy (Nginx, Apache) pour exposer l'application
 
-### Liste complète des paramètres
+## Structure du code
 
-| Paramètre | Valeur par défaut | Description |
-|-----------|-------------------|-------------|
-| `--input_dir` | `data/raw_gravures` | Dossier contenant les images brutes |
-| `--output_dir` | `data/augmented_gravures` | Dossier pour les images augmentées |
-| `--epochs` | 50 | Nombre d'époques d'entraînement |
-| `--batch_size` | 16 | Taille du lot d'entraînement |
-| `--balance_classes` | True | Équilibrer les classes pendant l'entraînement |
-| `--progressive_unfreeze` | True | Dégel progressif des couches du modèle |
-| `--initial_freeze` | 0.8 | Proportion initiale des couches gelées |
-| `--onecycle` | True | Utiliser le scheduler OneCycleLR |
-| `--mining_type` | "semi-hard" | Type de mining pour triplet loss |
-| `--min_threshold` | 10 | Nombre minimum d'images par classe |
-| `--target_count` | 20 | Nombre cible d'images après équilibrage |
-| `--skip_augmentation` | False | Ignorer l'étape d'augmentation |
-| `--skip_oversampling` | False | Ignorer l'étape d'équilibrage |
-| `--skip_evaluation` | False | Ignorer l'étape d'évaluation |
-| `--launch_streamlit` | False | Lancer l'application après l'entraînement |
+### Application Streamlit (`app.py`)
+- Interface utilisateur avec zone de dessin
+- Chargement du modèle et des embeddings de référence
+- Calcul des similarités et affichage des résultats
 
-## Flux de travail manuel
+### Modèle EfficientNet (`efficientnet_triplet.py`)
+- Architecture basée sur EfficientNet-B0
+- Adaptation pour les images en niveaux de gris
+- Tête d'embedding pour générer des vecteurs de 256 dimensions
 
-Si vous préférez exécuter les étapes séparément, voici la procédure à suivre:
+### Triplet Loss (`triplet_losses.py`)
+- Implémentation de la Triplet Loss standard
+- Version avec "hard mining" pour sélectionner les triplets difficiles
+- Optimisation pour l'apprentissage de représentations discriminatives
 
-### 1. Préparation des données
+## Pipeline de données
 
-Organisez vos images de gravures dans des sous-dossiers par classe dans `data/raw_gravures/`:
+Le projet utilise un pipeline de données complet pour préparer les données d'entraînement :
 
-```
-data/raw_gravures/
-├── classe1/
-│   ├── image1.jpg
-│   ├── image2.jpg
-│   └── ...
-├── classe2/
-│   ├── image1.jpg
-│   └── ...
-└── ...
-```
+1. **Données brutes** : Collection initiale de gravures
+2. **Augmentation** : Génération de variations pour enrichir le dataset
+   - Rotations, translations, changements d'échelle
+   - Modifications de luminosité et contraste
+   - Transformations élastiques et perspectives
+3. **Équilibrage** : Oversampling des classes minoritaires
+   - Duplication des images pour atteindre un minimum de 80 images par classe
+   - Distribution équilibrée pour un entraînement optimal
 
-### 2. Augmentation des données
+## Modèle d'IA
 
-```bash
-python app/data_augmentation.py --raw_dir data/raw_gravures --output_dir data/augmented_gravures
-```
+Le modèle utilise une architecture d'apprentissage par transfert avec EfficientNet-B0 :
 
-### 3. Équilibrage des classes minoritaires
+1. **Backbone** : EfficientNet-B0 pré-entraîné sur ImageNet
+2. **Adaptation** : Conversion des images en niveaux de gris vers 3 canaux
+3. **Tête d'embedding** : MLP pour projeter les features en vecteurs de 256 dimensions
+4. **Entraînement** : Triplet Loss avec "semi-hard mining" pour optimiser les représentations
 
-Si certaines classes ont trop peu d'exemples:
+## Interface utilisateur
 
-```bash
-python app/oversample_small_classes.py --raw_dir data/raw_gravures --augmented_dir data/augmented_gravures --min_threshold 10 --target_count 20
-```
+L'interface utilisateur est conçue pour être intuitive et réactive :
 
-### 4. Entraînement du modèle
+- Zone de dessin avec pinceau personnalisable
+- Boutons pour effacer le dessin et lancer la recherche
+- Affichage en grille des résultats avec scores de similarité
+- Design épuré et moderne
 
-```bash
-python app/train_efficientnet.py --data_dir data/augmented_gravures --epochs 50 --batch_size 16 --embedding_dim 256 --progressive_unfreeze --onecycle
-```
+---
 
-### 5. Évaluation du modèle
-
-```bash
-python app/evaluate_model.py --model_path model/best_efficientnet_triplet.pt --model_type efficientnet --data_dir data/augmented_gravures --output_dir model/evaluation_results
-```
-
-### 6. Analyse des erreurs
-
-```bash
-python app/analyze_errors.py --incorrect_dir model/incorrect_predictions --output_dir model/error_analysis
-```
-
-### 7. Lancement de l'application
-
-```bash
-bash start_streamlit_app.sh
-```
-
-Ou sous Windows:
-
-```bash
-streamlit run streamlit_app.py
-```
-
-## Description des composants principaux
-
-### Modèle EfficientNet avec Triplet Loss
-
-Le modèle principal utilise une architecture EfficientNet-B0 préentraînée sur ImageNet, avec une couche d'embedding personnalisée et un apprentissage par Triplet Loss avec mining intelligent pour obtenir des représentations vectorielles (embeddings) de haute qualité.
-
-Avantages:
-- Architecture optimisée avec excellent équilibre performance/ressources
-- Utilisation de transfert d'apprentissage 
-- Mining intelligent des triplets difficiles
-- Meilleures performances avec peu d'exemples
-- Facilité d'ajout de nouvelles classes sans réentraînement complet
-
-### Pipeline d'augmentation de données
-
-Les techniques d'augmentation utilisées incluent:
-- Rotations et flips
-- Ajustements de contraste et luminosité
-- Élasticité et déformations
-- Coupes aléatoires et zoom
-- Ajouts de bruit et flou
-- Simulations d'imperfections de numérisation
-
-### Équilibrage des classes
-
-Le système identifie automatiquement les classes sous-représentées et génère des exemples supplémentaires avec des augmentations plus fortes pour équilibrer le dataset.
-
-### Application Streamlit
-
-L'interface utilisateur permet:
-- De dessiner une gravure directement dans l'application
-- De télécharger une image pour analyse
-- De visualiser les classes les plus probables
-- D'explorer les images similaires dans la base de données
-- De comprendre les caractéristiques principales détectées
-
-## Paramètres d'entraînement optimaux
-
-Les paramètres recommandés pour l'entraînement sont:
-
-| Paramètre | Valeur | Description |
-|-----------|--------|-------------|
-| epochs | 50 | Nombre d'époques d'entraînement |
-| batch_size | 16 | Taille du lot d'entraînement |
-| embedding_dim | 256 | Dimension du vecteur d'embedding |
-| progressive_unfreeze | True | Dégel progressif des couches |
-| initial_freeze | 0.8 | Proportion initiale de couches gelées |
-| onecycle | True | Utilisation du scheduler OneCycleLR |
-| mining_type | semi-hard | Type de mining pour les triplets |
-| balance_classes | True | Équilibrer les classes pendant l'entraînement |
-
-## Performances et métriques
-
-Le modèle actuel atteint:
-- **Précision**: ~97.5% sur le jeu de test
-- **Qualité d'embeddings**: Excellente séparation des classes en utilisant t-SNE
-- **Robustesse**: Bonne résistance aux variations de style et d'orientation
-
-## Résolution de problèmes courants
-
-- **Erreur CUDA**: Si vous rencontrez des problèmes avec CUDA, assurez-vous d'avoir installé PyTorch avec le support CUDA correspondant à votre GPU.
-- **Mémoire insuffisante**: Réduisez la taille du batch ou utilisez un modèle plus léger.
-- **Classes confondues**: Utilisez l'analyse d'erreurs pour identifier et corriger les problèmes de classification.
-- **Nouveaux symboles**: Ajoutez simplement quelques exemples dans le dossier correspondant et relancez l'entraînement.
-
-## Développements futurs
-
-- Implémentation d'un système d'apprentissage continu
-- Ajout d'un mode d'annotation collaborative
-- Optimisation pour les appareils mobiles
-- Support pour les séquences de gravures et motifs complexes
-
-## Licence
-
-Ce projet est distribué sous licence [Insérer la licence appropriée].
-
-## Remerciements
-
-- [Liste des contributeurs ou références]
-- [Bibliothèques et ressources utilisées] 
+Développé avec ❤️ par [Votre Nom] 
