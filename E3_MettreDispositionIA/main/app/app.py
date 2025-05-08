@@ -53,21 +53,37 @@ def load_reference_embeddings(_model):
         if not os.path.isdir(cls_path):
             continue
             
-        # Prendre une seule image par classe pour éviter les doublons
-        img_paths = glob.glob(os.path.join(cls_path, "*.jpg"))
-        if not img_paths:
-            continue
-            
-        # Prendre la première image de chaque classe
-        img_path = img_paths[0]
-        img = Image.open(img_path).convert("L")  # Convertir en niveaux de gris
-        img_tensor = transform(img).unsqueeze(0).to(DEVICE)
+        # Chercher d'abord une image avec le même nom que le dossier (en .jpg ou .png)
+        preferred_img_path_jpg = os.path.join(cls_path, f"{cls}.jpg")
+        preferred_img_path_png = os.path.join(cls_path, f"{cls}.png")
         
-        with torch.no_grad():
-            emb = _model.forward_one(img_tensor).cpu().numpy()[0]
+        if os.path.exists(preferred_img_path_png):
+            # Utiliser l'image .png avec le même nom que le dossier
+            img_path = preferred_img_path_png
+        elif os.path.exists(preferred_img_path_jpg):
+            # Utiliser l'image .jpg avec le même nom que le dossier
+            img_path = preferred_img_path_jpg
+        else:
+            # Sinon, prendre la première image disponible (.jpg ou .png)
+            img_paths_jpg = glob.glob(os.path.join(cls_path, "*.jpg"))
+            img_paths_png = glob.glob(os.path.join(cls_path, "*.png"))
+            img_paths = img_paths_jpg + img_paths_png
             
-        # Stocker l'embedding et l'image
-        class_embeddings[cls] = (emb, img, img_path)
+            if not img_paths:
+                continue
+            img_path = img_paths[0]
+        
+        try:
+            img = Image.open(img_path).convert("L")  # Convertir en niveaux de gris
+            img_tensor = transform(img).unsqueeze(0).to(DEVICE)
+            
+            with torch.no_grad():
+                emb = _model.forward_one(img_tensor).cpu().numpy()[0]
+                
+            # Stocker l'embedding et l'image
+            class_embeddings[cls] = (emb, img, img_path)
+        except Exception as e:
+            continue
     
     # Convertir le dictionnaire en liste
     for cls, (emb, img, path) in class_embeddings.items():
