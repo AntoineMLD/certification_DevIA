@@ -6,6 +6,7 @@ DROP TABLE IF EXISTS fournisseurs;
 DROP TABLE IF EXISTS materiaux;
 DROP TABLE IF EXISTS gammes;
 DROP TABLE IF EXISTS series;
+DROP TABLE IF EXISTS tags;
 
 -- Création des tables
 CREATE TABLE traitements (
@@ -60,6 +61,18 @@ CREATE TABLE verres_traitements (
     FOREIGN KEY (verre_id) REFERENCES verres(id),
     FOREIGN KEY (traitement_id) REFERENCES traitements(id)
 );
+
+-- Création de la table tags
+CREATE TABLE tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    verre_id INTEGER NOT NULL,
+    tag TEXT NOT NULL,
+    FOREIGN KEY (verre_id) REFERENCES verres(id)
+);
+
+-- Création d'un index pour optimiser les recherches par tag
+CREATE INDEX idx_tags_verre_id ON tags(verre_id);
+CREATE INDEX idx_tags_tag ON tags(tag);
 
 -- Insertion des données depuis la table enhanced
 
@@ -127,6 +140,13 @@ JOIN enhanced e ON v.nom = e.nom_du_verre
 JOIN traitements t
 WHERE (t.type = 'protection' AND e.traitement_protection = 'YES')
    OR (t.type = 'photochromique' AND e.traitement_photochromique = 'YES');
+
+-- 8. Insertion des tags
+INSERT INTO tags (verre_id, tag)
+SELECT v.id, e.tag
+FROM verres v
+JOIN enhanced e ON v.nom = e.nom_du_verre
+WHERE e.tag IS NOT NULL;
 
 -- Création des index pour optimiser les performances
 CREATE INDEX idx_verres_nom ON verres(nom);
