@@ -1,3 +1,7 @@
+"""
+API FastAPI pour la classification des verres
+"""
+
 import logging
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -5,15 +9,16 @@ from slowapi.errors import RateLimitExceeded
 from fastapi import FastAPI, UploadFile, File, Request, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from fastapi.middleware.cors import CORSMiddleware
-from app.model_loader import load_model, preprocess_image, get_embedding
-from app.similarity_search import get_top_matches, load_references, reference_embeddings
-from app.database import find_matching_verres, get_verre_details
+from api.app.model_loader import load_model, preprocess_image, get_embedding
+from api.app.similarity_search import get_top_matches, load_references, reference_embeddings
+from api.app.database import find_matching_verres, get_verre_details
 import io 
 from PIL import Image
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 import os
 from dotenv import load_dotenv
+import time
 
 # Charger les variables d'environnement
 load_dotenv()

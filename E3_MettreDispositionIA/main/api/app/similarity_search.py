@@ -3,7 +3,7 @@ import numpy as np
 import os
 from PIL import Image
 import torch
-from app.model_loader import preprocess_image
+from api.app.model_loader import preprocess_image
 
 # Définir le chemin absolu vers le répertoire de référence
 REFERENCE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data/oversampled_gravures"))
