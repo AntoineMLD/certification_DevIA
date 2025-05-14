@@ -11,8 +11,11 @@ class EfficientNetEmbedding(nn.Module):
     def __init__(self, embedding_dim: int = 256, pretrained: bool = True):
         super().__init__()
 
-        # charge EfficientNet-B0 pré-entrainé
-        self.backbone = models.efficientnet_b0(pretrained=pretrained)
+        # charge EfficientNet-B0 avec les poids appropriés
+        if pretrained:
+            self.backbone = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1)
+        else:
+            self.backbone = models.efficientnet_b0(weights=None)
 
         # récupère la dimension du backbone
         last_channel = self.backbone.classifier[1].in_features
