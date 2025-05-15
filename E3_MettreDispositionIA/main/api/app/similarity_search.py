@@ -4,15 +4,19 @@ import os
 from PIL import Image
 import torch
 from api.app.model_loader import preprocess_image
+from .config import REFERENCE_DIR
 
-# Définir le chemin absolu vers le répertoire de référence
-REFERENCE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data/oversampled_gravures"))
 reference_embeddings = []
 
 def load_references(model):
     """
-    Cette fonction permet donc de créer une base de données d'embeddings de référence qui pourra être utilisée plus tard pour comparer des images inconnues aux images de référence par similarité.
+    Cette fonction permet donc de créer une base de données d'embeddings de référence 
+    qui pourra être utilisée plus tard pour comparer des images inconnues aux 
+    images de référence par similarité.
     """
+    if not os.path.exists(REFERENCE_DIR):
+        raise FileNotFoundError(f"Le répertoire de référence {REFERENCE_DIR} n'existe pas")
+        
     for cls in os.listdir(REFERENCE_DIR):
         path = os.path.join(REFERENCE_DIR, cls, f"{cls}.png")
         if not os.path.exists(path):
@@ -25,7 +29,8 @@ def load_references(model):
 
 def get_top_matches(query_emb, k=5):
     """
-    Cette fonction permet de trouver les k images de référence les plus similaires à l'image inconnue.
+    Cette fonction permet de trouver les k images de référence les plus similaires 
+    à l'image inconnue.
     """
     scores = []
     for cls, ref_emb in reference_embeddings:

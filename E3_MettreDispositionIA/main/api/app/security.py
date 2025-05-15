@@ -4,18 +4,20 @@ Gère la validation des entrées, les tokens et les logs de sécurité
 """
 
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Tuple
 from pydantic import BaseModel, EmailStr, constr
 import jwt
 from fastapi import HTTPException, status
 import logging
 import os
 from logging.handlers import RotatingFileHandler
+from .config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, ROTATION_THRESHOLD_MINUTES, LOG_DIR
 
 # Configuration du logging de sécurité
 def setup_security_logging():
     # Créer le dossier logs s'il n'existe pas
-    os.makedirs("logs", exist_ok=True)
+    security_log_path = os.path.join(LOG_DIR, "security")
+    os.makedirs(security_log_path, exist_ok=True)
     
     # Configurer le logger de sécurité
     security_logger = logging.getLogger("security")
@@ -23,7 +25,7 @@ def setup_security_logging():
     
     # Créer un handler qui écrit dans un fichier avec rotation
     handler = RotatingFileHandler(
-        "logs/security.log",
+        os.path.join(security_log_path, "security.log"),
         maxBytes=1024 * 1024,  # 1MB
         backupCount=5
     )
@@ -52,10 +54,10 @@ class UserCredentials(BaseModel):
 
 # Configuration des tokens
 TOKEN_SETTINGS = {
-    "SECRET_KEY": os.getenv("SECRET_KEY", "your-secret-key-for-jwt"),
-    "ALGORITHM": "HS256",
-    "ACCESS_TOKEN_EXPIRE_MINUTES": 30,
-    "ROTATION_THRESHOLD_MINUTES": 25  # Rotation 5 minutes avant expiration
+    "SECRET_KEY": SECRET_KEY,
+    "ALGORITHM": ALGORITHM,
+    "ACCESS_TOKEN_EXPIRE_MINUTES": ACCESS_TOKEN_EXPIRE_MINUTES,
+    "ROTATION_THRESHOLD_MINUTES": ROTATION_THRESHOLD_MINUTES
 }
 
 # Stockage des versions de token (en mémoire - à remplacer par une base de données en production)
@@ -73,9 +75,15 @@ def log_security_event(event_type: str, details: str, level: str = "INFO"):
     elif level == "ERROR":
         security_logger.error(log_message)
 
-def create_access_token(email: str) -> tuple[str, int]:
+def create_access_token(email: str) -> Tuple[str, int]:
     """
     Crée un nouveau token d'accès avec version
+    
+    Args:
+        email (str): Email de l'utilisateur pour lequel créer le token
+        
+    Returns:
+        Tuple[str, int]: Tuple contenant le token et sa version
     """
     # Incrémenter ou initialiser la version du token pour cet utilisateur
     current_version = token_versions.get(email, 0) + 1
@@ -103,9 +111,19 @@ def create_access_token(email: str) -> tuple[str, int]:
     
     return token, current_version
 
-def verify_token(token: str) -> TokenData:
+def verify_token(token: str) -> Tuple[TokenData, bool]:
     """
     Vérifie un token et gère la rotation si nécessaire
+    
+    Args:
+        token (str): Token JWT à vérifier
+        
+    Returns:
+        Tuple[TokenData, bool]: Tuple contenant les données du token et un booléen
+                              indiquant si le token doit être renouvelé
+        
+    Raises:
+        HTTPException: Si le token est invalide ou expiré
     """
     try:
         # Décoder le token
@@ -171,6 +189,13 @@ def verify_token(token: str) -> TokenData:
 def validate_image_file(file_content: bytes, max_size: int = 5 * 1024 * 1024) -> bool:
     """
     Valide un fichier image
+    
+    Args:
+        file_content (bytes): Contenu du fichier à valider
+        max_size (int, optional): Taille maximale en octets. Par défaut 5 Mo.
+        
+    Returns:
+        bool: True si le fichier est valide, False sinon
     """
     # Vérifier la taille du fichier
     if len(file_content) > max_size:

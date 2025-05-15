@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import os
 import requests
+import glob
 from io import BytesIO
 from auth import check_authentication, logout
 import logging
@@ -41,6 +42,65 @@ for key in ["results", "selected_tags", "matched_verres", "selected_verre_id", "
         if 'performed' in key:
             st.session_state[key] = False
 
+# Fonction pour trouver une image pour un symbole donné
+def find_symbol_image(symbol_name):
+    """
+    Cherche une image pour un symbole donné en essayant plusieurs formats et méthodes.
+    
+    Args:
+        symbol_name (str): Nom du symbole/classe
+        
+    Returns:
+        PIL.Image ou None: L'image trouvée ou None si aucune image n'est trouvée
+    """
+    # Vérifier si le nom du symbole est valide
+    if not symbol_name or not isinstance(symbol_name, str) or symbol_name.lower() == 'inconnu':
+        logger.warning(f"Nom de symbole invalide: {symbol_name}")
+        return None
+    
+    logger.info(f"Recherche d'image pour le symbole: {symbol_name}")
+    
+    # Chemins possibles à essayer
+    paths_to_try = []
+    
+    # 1. Essayer les formats courants dans le sous-dossier du symbole
+    for ext in ['.png', '.jpg', '.jpeg']:
+        paths_to_try.append(os.path.join(REF_IMG_DIR, symbol_name, f"{symbol_name}{ext}"))
+    
+    # 2. Essayer les formats courants directement dans le dossier de référence
+    for ext in ['.png', '.jpg', '.jpeg']:
+        paths_to_try.append(os.path.join(REF_IMG_DIR, f"{symbol_name}{ext}"))
+    
+    # Essayer chaque chemin
+    for path in paths_to_try:
+        if os.path.exists(path):
+            logger.info(f"Image trouvée: {path}")
+            try:
+                return Image.open(path)
+            except Exception as e:
+                logger.error(f"Erreur lors de l'ouverture de l'image {path}: {e}")
+                # Continuer avec le prochain chemin
+    
+    # Si aucun chemin exact n'a fonctionné, essayer de trouver n'importe quelle image dans le dossier du symbole
+    symbol_dir = os.path.join(REF_IMG_DIR, symbol_name)
+    if os.path.exists(symbol_dir) and os.path.isdir(symbol_dir):
+        logger.info(f"Recherche d'images dans le dossier: {symbol_dir}")
+        # Chercher tous les fichiers image
+        image_files = []
+        for ext in ['*.png', '*.jpg', '*.jpeg']:
+            image_files.extend(glob.glob(os.path.join(symbol_dir, ext)))
+        
+        # Utiliser le premier fichier trouvé s'il y en a
+        if image_files:
+            logger.info(f"Image trouvée dans le dossier: {image_files[0]}")
+            try:
+                return Image.open(image_files[0])
+            except Exception as e:
+                logger.error(f"Erreur lors de l'ouverture de l'image {image_files[0]}: {e}")
+    
+    logger.warning(f"Aucune image trouvée pour le symbole: {symbol_name}")
+    return None
+
 # --- Colonne de gauche : dessin, sélection et recherche ---
 col_left, col_right = st.columns([2, 1])
 
@@ -73,39 +133,59 @@ with col_left:
                     st.success("Résultats reçus")
                 except Exception as e:
                     st.error(f"Erreur API : {e}")
+                    logger.error(f"Erreur lors de l'appel API: {e}", exc_info=True)
 
     if st.session_state.results:
         st.subheader(f"Top {NUM_RESULTS} symboles similaires trouvés")
         cols = st.columns(3)
         for idx, res in enumerate(st.session_state.results[:NUM_RESULTS]):
             with cols[idx % 3]:
-                st.write(f"Tag : {res['class']} — Similarité : {res['similarity']:.2f}")
+                # Extraction du nom de classe avec méthode get sécurisée
+                class_name = res.get('class', 'inconnu')
+                similarity = res.get('similarity', 0.0)
+                
+                # Journaliser l'information pour aider au débogage
+                logger.info(f"Traitement du résultat {idx}: class_name={class_name}, similarity={similarity}")
+                
+                st.write(f"Tag : {class_name} — Similarité : {similarity:.2f}")
                 
                 # Afficher l'image correspondante
                 try:
-                    # Chemin de l'image de référence
-                    ref_img_path = f"{REF_IMG_DIR}/{res['class']}/{res['class']}.png"
-                    ref_img = Image.open(ref_img_path)
-                    st.image(ref_img, width=100, caption=res['class'])
+                    # Trouver et afficher l'image
+                    ref_img = find_symbol_image(class_name)
+                    if ref_img:
+                        st.image(ref_img, width=100, caption=class_name)
+                    else:
+                        st.warning(f"Aucune image trouvée pour {class_name}")
                 except Exception as e:
-                    st.warning(f"Image non trouvée: {e}")
+                    logger.error(f"Erreur lors du chargement de l'image pour {class_name}: {e}", exc_info=True)
+                    st.warning(f"Erreur lors du chargement de l'image: {e}")
                 
                 if st.button("Ajouter", key=f"add_{idx}"):
                     try:
-                        logger.info(f"[UI] Clic sur le bouton Ajouter pour la classe: {res['class']}")
+                        logger.info(f"[UI] Clic sur le bouton Ajouter pour la classe: {class_name}")
+                        
+                        # Vérifier si class_name est valide avant de l'envoyer à l'API
+                        if not class_name or class_name == 'inconnu':
+                            logger.warning(f"[UI] Tentative de validation d'une classe non valide: {class_name}")
+                            st.error("Impossible de valider une classe inconnue ou vide")
+                            continue
+                            
                         # Valider la prédiction auprès de l'API
-                        validate_prediction(res['class'])
-                        logger.info(f"[UI] Validation réussie pour la classe: {res['class']}")
+                        validate_prediction(class_name)
+                        logger.info(f"[UI] Validation réussie pour la classe: {class_name}")
+                        
                         # Ajouter aux tags sélectionnés
-                        if res['class'] not in st.session_state.selected_tags:
-                            st.session_state.selected_tags.append(res['class'])
-                            logger.info(f"[UI] Tag {res['class']} ajouté aux tags sélectionnés")
+                        if class_name not in st.session_state.selected_tags:
+                            st.session_state.selected_tags.append(class_name)
+                            logger.info(f"[UI] Tag {class_name} ajouté aux tags sélectionnés")
                             st.experimental_rerun()
                     except Exception as e:
-                        logger.error(f"[UI] Erreur lors de la validation de {res['class']}: {str(e)}")
+                        logger.error(f"[UI] Erreur lors de la validation de {class_name}: {str(e)}")
                         st.error(f"Erreur lors de la validation: {e}")
-                        if res['class'] not in st.session_state.selected_tags:
-                            st.session_state.selected_tags.append(res['class'])
+                        # Quand même ajouter le tag si l'API échoue, mais que le tag est valide
+                        if class_name != 'inconnu' and class_name not in st.session_state.selected_tags:
+                            st.session_state.selected_tags.append(class_name)
                             st.experimental_rerun()
 
     # --- Tags sélectionnés ---
@@ -248,22 +328,40 @@ with col_right:
     
     # Permettre la sélection d'un verre depuis le tableau
     if st.session_state.matched_verres:
-        verre_ids = [v["id"] for v in st.session_state.matched_verres]
-        verre_names = [f"{v.get('id')} - {v.get('fournisseur', '')} {v.get('nom', '')} {v.get('variante', '')}" for v in st.session_state.matched_verres]
+        # Créer une liste d'options pour le sélecteur
+        verre_options = [f"#{v['id']} - {v.get('fournisseur', '')} {v.get('nom', '')} {v.get('variante', '')}" for v in st.session_state.matched_verres]
         
-        selected_verre_name = st.selectbox("Sélectionnez un verre pour voir les détails", [""] + verre_names)
+        # Ajouter une option vide en premier
+        verre_options.insert(0, "Sélectionnez un verre...")
         
-        if selected_verre_name:
+        # Créer le sélecteur
+        selected_option = st.selectbox("Sélectionner un verre pour voir les détails", verre_options)
+        
+        # Si une option valide est sélectionnée
+        if selected_option != "Sélectionnez un verre...":
+            # Extraire l'ID du verre depuis l'option sélectionnée
+            verre_id_str = selected_option.split(" - ")[0].replace("#", "")
             try:
-                selected_idx = verre_names.index(selected_verre_name)
-                selected_verre_id = verre_ids[selected_idx]
+                verre_id = int(verre_id_str)
                 
-                with st.spinner("Chargement des détails complets..."):
-                    # Récupérer les détails complets du verre depuis l'API
-                    verre_details = get_verre_details_api(selected_verre_id)
-                    
-                display_verre_details(verre_details)
-            except Exception as e:
-                st.error(f"Erreur lors du chargement des détails: {e}")
+                # Trouver le verre sélectionné dans la liste des verres correspondants
+                selected_verre = next((v for v in st.session_state.matched_verres if v["id"] == verre_id), None)
+                
+                if selected_verre:
+                    # Récupérer les détails complets du verre via l'API
+                    try:
+                        verre_details = get_verre_details_api(verre_id)
+                        st.session_state.selected_verre_details = verre_details
+                        # Afficher les détails
+                        display_verre_details(verre_details)
+                    except Exception as e:
+                        st.error(f"Erreur lors de la récupération des détails du verre: {e}")
+                        # Afficher les informations limitées que nous avons déjà
+                        display_verre_details(selected_verre)
+            except ValueError:
+                st.error(f"Erreur lors de la conversion de l'ID du verre: {verre_id_str}")
     else:
-        st.info("Aucun verre trouvé. Recherchez des verres pour voir les détails.")
+        if st.session_state.search_performed:
+            st.info("Aucun verre trouvé. Essayez avec d'autres tags.")
+        else:
+            st.info("Recherchez des verres pour afficher les détails.")

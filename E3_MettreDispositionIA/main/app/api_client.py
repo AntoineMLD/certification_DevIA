@@ -82,7 +82,28 @@ def get_similar_tags_from_api(image: Image.Image, route: str = "/match"):
         except requests.exceptions.JSONDecodeError:
             logger.error(f"Erreur 422 (Unprocessable Entity) de l'API {route}. Réponse non JSON: {response.text}")
     response.raise_for_status()
-    return response.json()["matches"]
+    
+    # Récupérer les résultats et normaliser les clés
+    results = response.json()["matches"]
+    
+    # Normaliser les résultats pour gérer à la fois 'class' et 'class_'
+    normalized_results = []
+    for match in results:
+        # Créer une copie du match pour ne pas modifier l'original
+        normalized_match = dict(match)
+        
+        # S'assurer que la clé 'class' existe (même si on avait 'class_')
+        if 'class_' in normalized_match and 'class' not in normalized_match:
+            normalized_match['class'] = normalized_match['class_']
+        
+        # S'assurer que similarity existe
+        if 'similarity' not in normalized_match:
+            normalized_match['similarity'] = 0.0
+            
+        normalized_results.append(normalized_match)
+    
+    logger.info(f"Résultats normalisés: {normalized_results}")
+    return normalized_results
 
 def validate_prediction(predicted_class: str, route: str = "/validate_prediction"):
     """

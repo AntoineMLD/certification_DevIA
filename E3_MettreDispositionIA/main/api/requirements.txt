@@ -15,3 +15,5 @@ streamlit==1.29.0
 streamlit-drawable-canvas==0.9.3
 python-jwt==4.0.0
 cryptography==41.0.0
+pytest
+httpx

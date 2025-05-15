@@ -33,10 +33,38 @@ Ce module (E1) constitue la première étape d'un projet de certification Dével
 ## 🔧 Environnement Technique
 
 ### Architecture
-- Base de données SQLite
-- API FastAPI
-- Conteneurisation Docker
-- Scripts Python pour le scraping et le traitement des données
+Le module E1 est principalement constitué d'une API RESTful développée avec FastAPI. Cette API sert de backend pour la gestion des données des verres optiques.
+
+- **Base de données** : SQLite (par défaut pour le développement local, fichier `Base_de_donnees/france_optique.db`). Le système est conçu pour être potentiellement compatible avec PostgreSQL pour la production (voir `requirements.txt`).
+- **API** : Développée avec FastAPI, fournissant des endpoints CRUD pour les entités de la base de données (Verres, Fournisseurs, Matériaux, etc.).
+- **Authentification** : Sécurisée par tokens JWT pour protéger les endpoints.
+- **Conteneurisation** : Un `Dockerfile` et un `docker-compose.yml` sont fournis pour faciliter le déploiement et l'exécution dans un environnement conteneurisé.
+- **Scripts Python** : Des scripts peuvent exister pour le scraping initial des données et le peuplement de la base (non gérés directement par l'API en fonctionnement normal).
+
+La structure principale de l'API se trouve dans le dossier `api/`:
+```
+E1_GestionDonnees/
+├── api/
+│   ├── app/
+│   │   ├── main.py         # Point d'entrée de l'application FastAPI, définit les routes
+│   │   │   ├── auth/
+│   │   │   │   └── jwt_auth.py # Logique d'authentification JWT
+│   │   │   ├── models/
+│   │   │   │   └── database.py # Modèles SQLAlchemy et initialisation de la DB
+│   │   │   ├── schemas/
+│   │   │   │   └── schemas.py  # Modèles Pydantic pour la validation des données et les réponses API
+│   │   │   ├── config.py       # Configuration de l'application (chargement depuis .env)
+│   │   │   └── dependencies.py # Dépendances FastAPI (si utilisées, ex: get_db)
+│   │   ├── tests/              # Tests unitaires et d'intégration pour l'API
+│   │   │   └── test_main.py
+│   │   ├── .env.example        # Exemple de fichier d'environnement
+│   │   └── requirements.txt    # Dépendances Python pour l'API
+├── Base_de_donnees/
+│   └── france_optique.db   # Fichier de base de données SQLite (si utilisé)
+├── Dockerfile
+├── docker-compose.yml
+└── README.md
+```
 
 ### Compatibilité
 - Multi-plateforme (Windows, Linux, MacOS)
@@ -169,4 +197,86 @@ pytest
 3. **Maintenance** :
    - Mettre à jour régulièrement les dépendances
    - Vérifier les rapports de sécurité
-   - Maintenir une couverture de tests suffisante 
+   - Maintenir une couverture de tests suffisante
+
+### Configuration de l'API (FastAPI)
+
+La configuration de l'API est gérée via le fichier `api/app/config.py`, qui charge les variables d'un fichier `.env` situé dans `api/.env`.
+Un fichier d'exemple `api/.env.example` est fourni. Copiez-le en `api/.env` et ajustez les valeurs :
+
+```dotenv
+# api/.env
+SECRET_KEY="votre_cle_secrete_tres_longue_et_aleatoire_ici"
+ALGORITHM="HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# Configuration de la base de données (SQLite par défaut)
+# Assurez-vous que le chemin est correct par rapport à l'emplacement d'exécution de l'API.
+# Si exécuté depuis E1_GestionDonnees/api/, le chemin relatif pour la DB à la racine de E1_GestionDonnees est ../Base_de_donnees/france_optique.db
+DATABASE_URL="sqlite:///../Base_de_donnees/france_optique.db"
+
+# Identifiants pour l'utilisateur admin par défaut (utilisé par jwt_auth.check_user)
+# Ces identifiants sont utilisés pour obtenir un token via l'endpoint /token
+ADMIN_EMAIL="admin@example.com"
+ADMIN_PASSWORD="admin123"
+
+# API Info
+API_VERSION="1.0"
+API_TITLE="API de Gestion de Données Optiques"
+API_DESCRIPTION="Fournit un accès CRUD aux données des verres optiques."
+```
+
+**Variables clés** :
+- `SECRET_KEY` : Une chaîne aléatoire longue et complexe pour la signature des tokens JWT. **À CHANGER EN PRODUCTION.**
+- `ALGORITHM` : Algorithme de signature JWT (HS256 par défaut).
+- `ACCESS_TOKEN_EXPIRE_MINUTES` : Durée de validité des tokens.
+- `DATABASE_URL` : URL de connexion à la base de données. Par défaut, configurée pour SQLite. Pour PostgreSQL, le format serait `postgresql://user:password@host:port/dbname`.
+- `ADMIN_EMAIL` / `ADMIN_PASSWORD` : Identifiants pour l'utilisateur par défaut permettant de générer un token initial pour tester l'API. En production, un système de gestion d'utilisateurs plus robuste serait nécessaire.
+
+### Lancement de l'API localement
+
+1.  **Prérequis** :
+    *   Python 3.8+
+    *   Avoir installé les dépendances de `api/requirements.txt` dans un environnement virtuel.
+    *   Avoir configuré le fichier `api/.env`.
+    *   La base de données doit exister et être initialisée (si elle n'est pas créée automatiquement).
+
+2.  **Depuis le dossier `E1_GestionDonnees/api/`** :
+    ```bash
+    # Activer votre environnement virtuel si ce n'est pas déjà fait
+    # source ../venv/bin/activate  # ou le chemin vers votre venv
+
+    uvicorn app.main:app --reload --port 8001
+    ```
+    L'API sera alors accessible à `http://localhost:8001`.
+
+3.  **Documentation de l'API** :
+    Une fois l'API lancée, vous pouvez accéder à la documentation interactive (Swagger UI) générée automatiquement par FastAPI à l'adresse :
+    `http://localhost:8001/docs`
+
+    Et à la documentation alternative (ReDoc) :
+    `http://localhost:8001/redoc`
+
+### Lancement avec Docker (Optionnel)
+
+Si vous souhaitez utiliser Docker :
+
+1.  Assurez-vous que Docker et Docker Compose sont installés.
+2.  Depuis la racine du dossier `E1_GestionDonnees/` :
+    ```bash
+    docker-compose up --build
+    ```
+    L'API devrait être accessible selon la configuration dans `docker-compose.yml` (souvent sur le port 8001 également, mais mappé depuis le conteneur).
+
+### Exécuter les tests localement
+
+```bash
+# Installation des outils de test
+pip install flake8 pytest
+
+# Vérification du code
+flake8 .
+
+# Exécution des tests
+pytest
+``` 

@@ -7,16 +7,6 @@ Ce module définit la classe ModelMonitor, un singleton responsable de :
 - Le stockage persistant des prédictions validées.
 - Le calcul et la génération de rapports de métriques de performance
   basées sur les prédictions validées.
-
-Les données de prédiction gérées ont typiquement la structure suivante :
-{
-    'timestamp': str,          # Timestamp ISO de la prédiction
-    'predicted_label': str,    # Label de classe prédit par le modèle (ou validé par l'utilisateur)
-    'confidence': float,       # Score de confiance de la prédiction originale du modèle
-    'embedding': list[float],  # (Optionnel) Embedding vectoriel de l'input
-    'processing_time': float,  # Temps de traitement pour la prédiction en secondes
-    'original_prediction': str # (Optionnel) Label prédit par le modèle avant validation humaine
-}
 """
 
 import pandas as pd
@@ -27,6 +17,7 @@ import os
 from collections import deque
 import logging
 from functools import lru_cache
+from ..config import REPORTS_DIR
 
 # Configuration du logging
 logging.basicConfig(
@@ -57,7 +48,7 @@ class ModelMonitor:
         
         Args:
             window_size (int): Taille de la fenêtre glissante pour stocker
-                               les prédictions validées et calculer les métriques.
+                              les prédictions validées et calculer les métriques.
         """
         # Éviter la réinitialisation si déjà initialisé
         if hasattr(self, 'initialized'):
@@ -72,11 +63,11 @@ class ModelMonitor:
         # DataFrame Pandas contenant les données des prédictions validées pour calculs
         self.current_data = None
         
-        # Création des dossiers pour sauvegarder les rapports et l'historique
-        self.reports_dir = os.path.join(os.path.dirname(__file__), "reports")
+        # Configuration des chemins
+        self.reports_dir = REPORTS_DIR
         self.history_file = os.path.join(self.reports_dir, "predictions_history.json")
         os.makedirs(self.reports_dir, exist_ok=True)
-        logger.info(f"Dossier des rapports créé: {self.reports_dir}")
+        logger.info(f"Utilisation du dossier des rapports: {self.reports_dir}")
         
         # Charger l'historique des prédictions
         self._load_history()
@@ -111,129 +102,94 @@ class ModelMonitor:
             if os.path.exists(self.history_file):
                 with open(self.history_file, 'r') as f:
                     history = json.load(f)
-                    self.validated_predictions.clear()
-                    history.sort(key=lambda x: x['timestamp'])
-                    seen_timestamps = set()
-                    for pred_data in history: # Renommé pred en pred_data pour clarté
-                        if pred_data['timestamp'] not in seen_timestamps:
-                            validated_pred_data = self._validate_prediction_data(pred_data)
-                            if validated_pred_data:
-                                self.validated_predictions.append(validated_pred_data)
-                                seen_timestamps.add(pred_data['timestamp'])
-                    logger.info(f"Historique chargé : {len(self.validated_predictions)} prédictions uniques depuis {self.history_file}")
-                    self._update_current_data()
+                    
+                if isinstance(history, list):
+                    # Valider et ajouter chaque prédiction de l'historique
+                    for pred in history:
+                        validated_pred = self._validate_prediction_data(pred)
+                        if validated_pred:
+                            self.validated_predictions.append(validated_pred)
+                            
+                    # Mettre à jour le DataFrame pour les calculs
+                    self._update_dataframe()
+                    logger.info(f"Historique chargé avec {len(self.validated_predictions)} prédictions")
+                else:
+                    logger.warning("Format d'historique invalide. Attendu: liste")
             else:
-                logger.info(f"Aucun fichier d'historique trouvé à {self.history_file}")
+                logger.info("Aucun fichier d'historique trouvé. Création d'un nouvel historique.")
         except Exception as e:
-            logger.error(f"Erreur lors du chargement de l'historique : {str(e)}")
-            
+            logger.error(f"Erreur lors du chargement de l'historique: {str(e)}")
+    
     def _save_history(self):
         """Sauvegarde l'historique des prédictions validées dans un fichier JSON."""
         try:
-            history = []
-            logger.info(f"[SAVE] Début de la sauvegarde - {len(self.validated_predictions)} prédictions à sauvegarder")
-            
-            for pred_data in self.validated_predictions: # Renommé pred en pred_data
-                clean_pred_data = self._validate_prediction_data(pred_data)
-                if clean_pred_data:
-                    if isinstance(clean_pred_data.get('embedding'), np.ndarray):
-                        clean_pred_data['embedding'] = clean_pred_data['embedding'].tolist()
-                    history.append(clean_pred_data)
-                    
-            logger.info(f"[SAVE] {len(history)} prédictions nettoyées et prêtes à être sauvegardées")
-            
             with open(self.history_file, 'w') as f:
-                json.dump(history, f, indent=2)
-            logger.info(f"[SAVE] Historique sauvegardé avec succès dans {self.history_file}")
-            
-            if os.path.exists(self.history_file):
-                file_size = os.path.getsize(self.history_file)
-                logger.info(f"[SAVE] Fichier créé avec succès, taille: {file_size} bytes")
-            else:
-                logger.error("[SAVE] Le fichier n'a pas été créé!")
-                
-            self.generate_report()
+                json.dump(list(self.validated_predictions), f)
+            logger.info(f"Historique sauvegardé avec {len(self.validated_predictions)} prédictions")
         except Exception as e:
-            logger.error(f"[SAVE] Erreur lors de la sauvegarde de l'historique : {str(e)}")
-            logger.exception("[SAVE] Détails de l'erreur:")
-
-    def add_temp_prediction(self, prediction_data):
-        """
-        Ajoute une nouvelle prédiction brute du modèle à une file d'attente temporaire,
-        en attendant une éventuelle validation par l'utilisateur.
-        """
-        logger.info(f"[TEMP] État actuel des prédictions temporaires: {len(self.temp_predictions)} prédictions")
-        logger.info(f"[TEMP] Tentative d'ajout d'une prédiction temporaire: {prediction_data.get('predicted_label', 'Unknown')}")
-        
-        clean_data = self._validate_prediction_data(prediction_data)
-        if clean_data:
-            if isinstance(clean_data.get('embedding'), np.ndarray):
-                clean_data['embedding'] = clean_data['embedding'].tolist()
-            self.temp_predictions.append(clean_data)
-            logger.info(f"[TEMP] Prédiction temporaire ajoutée avec succès: {clean_data['predicted_label']} (confiance: {clean_data['confidence']:.2%})")
-            logger.info(f"[TEMP] Nombre total de prédictions temporaires après ajout: {len(self.temp_predictions)}")
+            logger.error(f"Erreur lors de la sauvegarde de l'historique: {str(e)}")
+    
+    def _update_dataframe(self):
+        """Met à jour le DataFrame interne avec les prédictions validées pour les calculs."""
+        if self.validated_predictions:
+            self.current_data = pd.DataFrame(self.validated_predictions)
+            logger.debug(f"DataFrame mis à jour avec {len(self.current_data)} prédictions")
         else:
-            logger.error("[TEMP] Données de prédiction invalides")
-        
-    def validate_last_prediction(self, validated_class: str):
+            self.current_data = None
+            logger.debug("DataFrame réinitialisé (aucune prédiction validée)")
+    
+    def add_temp_prediction(self, prediction):
         """
-        Valide la dernière prédiction temporaire avec un label de vérité terrain (validated_class)
-        fourni par l'utilisateur, puis l'ajoute à la liste des prédictions validées.
-        """
-        logger.info(f"[VALIDATION] Début de la validation pour la classe: {validated_class}")
+        Ajoute une prédiction temporaire du modèle (non validée par l'utilisateur).
         
+        Args:
+            prediction (dict): Dictionnaire contenant les données de prédiction.
+                Doit contenir au minimum:
+                - timestamp
+                - predicted_label
+                - confidence
+                - processing_time
+        """
+        validated = self._validate_prediction_data(prediction)
+        if validated:
+            # Stocker la prédiction dans la liste temporaire
+            if 'original_prediction' not in validated:
+                validated['original_prediction'] = validated['predicted_label']
+            self.temp_predictions.append(validated)
+            logger.info(f"Prédiction temporaire ajoutée pour la classe: {validated['predicted_label']}")
+        else:
+            logger.warning("Prédiction temporaire invalide. Non ajoutée.")
+    
+    def validate_last_prediction(self, validated_label):
+        """
+        Valide la dernière prédiction temporaire avec le label confirmé par l'utilisateur.
+        
+        Args:
+            validated_label (str): Label de classe validé par l'utilisateur.
+        """
         if not self.temp_predictions:
-            logger.warning("[VALIDATION] Pas de prédiction temporaire à valider - la file est vide")
-            return
+            logger.warning("Aucune prédiction temporaire à valider")
+            return False
             
-        last_pred = self.temp_predictions[-1] # On prend la dernière, on pourrait aussi la retirer avec pop()
-        logger.info(f"[VALIDATION] Dernière prédiction temporaire trouvée: {last_pred['predicted_label']} -> {validated_class}")
-        logger.info(f"[VALIDATION] Nombre total de prédictions temporaires: {len(self.temp_predictions)}")
+        # Prendre la dernière prédiction temporaire
+        last_pred = self.temp_predictions.pop()
         
-        validated_pred_data = { # Renommé validated_pred
-            'timestamp': last_pred['timestamp'],
-            'predicted_label': validated_class, # C'est maintenant le label "vérité terrain"
-            'confidence': last_pred['confidence'], # Confiance de la prédiction originale
-            'embedding': last_pred['embedding'],
-            'processing_time': last_pred['processing_time'],
-            'original_prediction': last_pred['predicted_label'] # Label original du modèle
-        }
-        
-        logger.info(f"[VALIDATION] Prédiction validée créée avec timestamp: {validated_pred_data['timestamp']}")
-        
-        clean_pred_data = self._validate_prediction_data(validated_pred_data)
-        if clean_pred_data:
-            self.validated_predictions.append(clean_pred_data)
-            logger.info(f"[VALIDATION] Prédiction validée ajoutée avec succès (total: {len(self.validated_predictions)})")
+        # Stocker le label original si différent du label validé
+        if 'original_prediction' not in last_pred:
+            last_pred['original_prediction'] = last_pred['predicted_label']
             
-            try:
-                self._update_current_data()
-                logger.info("[VALIDATION] Données courantes mises à jour")
-                self._save_history()
-                logger.info("[VALIDATION] Historique sauvegardé avec succès")
-            except Exception as e:
-                logger.error(f"[VALIDATION] Erreur lors de la sauvegarde: {str(e)}")
-        else:
-            logger.error("[VALIDATION] Impossible de valider la prédiction : données invalides")
+        # Mettre à jour avec le label validé
+        last_pred['predicted_label'] = validated_label
         
-    def _update_current_data(self):
-        """Met à jour le DataFrame Pandas self.current_data avec les prédictions validées actuelles."""
-        if not self.validated_predictions:
-            self.current_data = None # Assurer que current_data est None si pas de prédictions
-            return
-            
-        data_list = [] # Renommé data en data_list pour éviter confusion avec self.current_data
-        for pred_data in self.validated_predictions: # Renommé pred en pred_data
-            row = {
-                'timestamp': pred_data['timestamp'],
-                'predicted_label': pred_data['predicted_label'], # Label validé
-                'confidence': pred_data['confidence'],
-                'processing_time': pred_data['processing_time'],
-                'original_prediction': pred_data.get('original_prediction', pred_data['predicted_label'])
-            }
-            data_list.append(row)
-            
-        self.current_data = pd.DataFrame(data_list)
+        # Ajouter aux prédictions validées
+        self.validated_predictions.append(last_pred)
+        
+        # Mettre à jour le DataFrame et sauvegarder l'historique
+        self._update_dataframe()
+        self._save_history()
+        
+        logger.info(f"Prédiction validée avec le label: {validated_label}")
+        return True
         
     def generate_report(self):
         """
@@ -250,8 +206,8 @@ class ModelMonitor:
         - n_predictions: Nombre total de prédictions validées dans la fenêtre actuelle.
         - predictions_per_class: Distribution des labels de classe validés.
         - prediction_accuracy: Précision du modèle, calculée en comparant la prédiction
-                               originale du modèle au label validé par l'utilisateur.
-                               (label validé est considéré comme la vérité terrain).
+                              originale du modèle au label validé par l'utilisateur.
+                              (label validé est considéré comme la vérité terrain).
         
         Returns:
             dict or None: Un dictionnaire contenant les métriques, ou None si
@@ -298,7 +254,7 @@ class ModelMonitor:
         """
         if self.current_data is None or 'confidence' not in self.current_data.columns or self.current_data['confidence'].empty:
             return 0.0
-        return self.current_data['confidence'].mean()
+        return float(self.current_data['confidence'].mean())
         
     def _calculate_avg_processing_time(self):
         """
@@ -307,7 +263,7 @@ class ModelMonitor:
         """
         if self.current_data is None or 'processing_time' not in self.current_data.columns or self.current_data['processing_time'].empty:
             return 0.0
-        return self.current_data['processing_time'].mean()
+        return float(self.current_data['processing_time'].mean())
         
     def _count_predictions_per_class(self):
         """
@@ -339,7 +295,7 @@ class ModelMonitor:
         if total_predictions == 0:
             return 0.0
             
-        return correct_predictions / total_predictions
+        return float(correct_predictions / total_predictions)
 
 # Instance globale du moniteur
 monitor = ModelMonitor() 

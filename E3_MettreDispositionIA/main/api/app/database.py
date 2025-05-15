@@ -1,20 +1,30 @@
 import sqlite3 
 import json 
 import os
+import logging
+from .config import DB_PATH
 
-# Définir le chemin absolu vers la base de données
-# Utiliser un chemin relatif qui a fonctionné dans l'ancien script
-DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../E1_GestionDonnees/Base_de_donnees/france_optique.db"))
+# Configuration du logging
+logger = logging.getLogger(__name__)
 
 # Vérifier si le fichier existe au démarrage
 if not os.path.exists(DB_PATH):
-    print(f"ATTENTION: La base de données n'a pas été trouvée à: {DB_PATH}")
+    logger.error(f"ATTENTION: La base de données n'a pas été trouvée à: {DB_PATH}")
 else:
-    print(f"Base de données trouvée à: {DB_PATH}")
+    logger.info(f"Base de données trouvée à: {DB_PATH}")
 
 def find_matching_verres(tags):
+    """
+    Trouve les verres correspondant aux tags donnés.
+    
+    Args:
+        tags (list): Liste de tags à rechercher.
+        
+    Returns:
+        list: Liste des verres correspondant aux tags.
+    """
     if not os.path.exists(DB_PATH):
-        print(f"Erreur: La base de données n'existe pas à {DB_PATH}")
+        logger.error(f"Erreur: La base de données n'existe pas à {DB_PATH}")
         return []
     
     try:
@@ -54,22 +64,28 @@ def find_matching_verres(tags):
                         "tags": verre_tags  # Garder les tags originaux dans la réponse
                     })
             except Exception as e:
-                print(f"Erreur lors du traitement des tags pour le verre {verre_id}: {e}")
+                logger.error(f"Erreur lors du traitement des tags pour le verre {verre_id}: {e}")
                 continue
 
         conn.close()
         return verres
     except Exception as e:
-        print(f"Erreur de connexion à la base de données: {e}")
+        logger.error(f"Erreur de connexion à la base de données: {e}")
         return []
 
 def get_verre_details(verre_id):
     """
     Récupère les détails complets d'un verre avec les informations des tables liées
     (materiaux, series, traitements, verres_traitements)
+    
+    Args:
+        verre_id (int): Identifiant du verre.
+        
+    Returns:
+        dict: Détails du verre ou None si non trouvé.
     """
     if not os.path.exists(DB_PATH):
-        print(f"Erreur: La base de données n'existe pas à {DB_PATH}")
+        logger.error(f"Erreur: La base de données n'existe pas à {DB_PATH}")
         return None
     
     try:
@@ -89,6 +105,7 @@ def get_verre_details(verre_id):
         verre_row = cursor.fetchone()
         if not verre_row:
             conn.close()
+            logger.warning(f"Verre avec ID {verre_id} non trouvé")
             return None
         
         # Convertir en dictionnaire
@@ -98,7 +115,8 @@ def get_verre_details(verre_id):
         if verre.get("tags"):
             try:
                 verre["tags"] = json.loads(verre["tags"])
-            except:
+            except json.JSONDecodeError as e:
+                logger.error(f"Erreur de décodage JSON pour les tags: {e}")
                 verre["tags"] = []
         
         # 2. Récupérer le matériau
@@ -131,7 +149,7 @@ def get_verre_details(verre_id):
         return verre
     
     except Exception as e:
-        print(f"Erreur lors de la récupération des détails du verre: {e}")
+        logger.error(f"Erreur lors de la récupération des détails du verre: {e}")
         if 'conn' in locals():
             conn.close()
         return None

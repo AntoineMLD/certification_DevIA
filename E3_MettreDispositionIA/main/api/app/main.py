@@ -17,8 +17,15 @@ from api.app.security import (
     create_access_token,
     verify_token,
     validate_image_file,
-    log_security_event,
-    TOKEN_SETTINGS
+    log_security_event
+)
+from api.app.monitoring.metrics_collector import monitor
+from api.app.config import (
+    ADMIN_EMAIL,
+    ADMIN_PASSWORD,
+    API_TITLE,
+    API_VERSION,
+    API_DESCRIPTION
 )
 import io 
 from PIL import Image
@@ -28,9 +35,7 @@ from dotenv import load_dotenv
 import time
 import numpy as np
 from pydantic import BaseModel
-
-# Import du système de monitoring
-from monitoring.metrics_collector import monitor
+from typing import List, Dict, Any
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -46,9 +51,44 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 class PredictionValidation(BaseModel):
     predicted_class: str
 
+# Utilisation d'une classe de modèle plus simple pour éviter les problèmes de validation
+class Match(BaseModel):
+    class_: str = None
+    similarity: float = 0.0
+    
+    class Config:
+        populate_by_name = True
+        extra = "allow"  # Accepter des champs supplémentaires
+        fields = {
+            'class_': 'class'
+        }
+        schema_extra = {
+            "example": {
+                "class": "e_courbebasse",
+                "similarity": 0.95
+            }
+        }
+
+class MatchResponse(BaseModel):
+    matches: List[Match]
+    
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+
+class ValidationResponse(BaseModel):
+    status: str
+    message: str
+
 # Initialisation du limiteur de taux
 limiter = Limiter(key_func=get_remote_address)
-app = FastAPI()
+app = FastAPI(
+    title=API_TITLE,
+    version=API_VERSION,
+    description=API_DESCRIPTION,
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
 
 # Configuration CORS
 app.add_middleware(
@@ -84,7 +124,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     
     return token_data.email
 
-@app.post("/token")
+@app.post("/token", response_model=TokenResponse, summary="Obtenir un token d'authentification", description="Authentifie l'utilisateur et renvoie un token JWT")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     """
     Point de terminaison pour l'authentification
@@ -97,7 +137,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         )
         
         # Vérifier si l'email et le mot de passe correspondent
-        if form_data.username != os.getenv("ADMIN_EMAIL") or form_data.password != os.getenv("ADMIN_PASSWORD"):
+        if form_data.username != ADMIN_EMAIL or form_data.password != ADMIN_PASSWORD:
             log_security_event(
                 "LOGIN_FAILED",
                 f"Failed login attempt for {form_data.username}",
@@ -130,15 +170,24 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
             detail=str(e)
         )
 
-@app.post("/embedding")
+@app.post("/embedding", summary="Obtenir l'embedding d'une image", description="Calcule et renvoie l'embedding vectoriel d'une image")
 @limiter.limit("5/minute")
 async def get_image_embedding(request: Request, file: UploadFile = File(...), token: str = Depends(verify_token)):
+    """
+    Calcule l'embedding d'une image
+    """
     image_bytes = await file.read()
+    if not validate_image_file(image_bytes):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid image file"
+        )
+        
     img = Image.open(io.BytesIO(image_bytes)).convert("L")
     embedding = get_embedding(model, img)
     return {"embedding": embedding.tolist()}
 
-@app.post("/match")
+@app.post("/match", response_model=MatchResponse, summary="Trouver les correspondances pour une image", description="Analyse une image et renvoie les classes les plus similaires")
 @limiter.limit("5/minute")
 async def get_best_match(
     request: Request,
@@ -171,6 +220,16 @@ async def get_best_match(
         matches = get_top_matches(embedding)
         logger.info(f"Correspondances trouvées: {matches}")
         
+        # Convertir les correspondances pour assurer la compatibilité avec le modèle Pydantic
+        formatted_matches = []
+        for match in matches:
+            # Créer un nouveau dictionnaire avec la clé 'class_' au lieu de 'class'
+            formatted_match = {
+                'class_': match.get('class', ''),
+                'similarity': match.get('similarity', 0.0)
+            }
+            formatted_matches.append(formatted_match)
+        
         # Calcul du temps de traitement
         processing_time = time.time() - start_time
         
@@ -180,7 +239,7 @@ async def get_best_match(
             'timestamp': datetime.now(),
             'predicted_label': best_match["class"],
             'confidence': float(best_match["similarity"]),
-            'embedding': embedding.flatten(),
+            'embedding': embedding.flatten().tolist(),
             'processing_time': processing_time
         })
         
@@ -189,7 +248,7 @@ async def get_best_match(
             f"Successful prediction for user {current_user}"
         )
         
-        return {"matches": matches}
+        return {"matches": formatted_matches}
         
     except Exception as e:
         log_security_event(
@@ -200,10 +259,10 @@ async def get_best_match(
         logger.error(f"Erreur lors du traitement: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail="Erreur lors du traitement de l'image"
+            detail=f"Erreur lors du traitement de l'image: {str(e)}"
         )
 
-@app.post("/validate_prediction")
+@app.post("/validate_prediction", response_model=ValidationResponse, summary="Valider une prédiction", description="Permet de valider une prédiction et de l'ajouter aux métriques")
 @limiter.limit("10/minute")
 async def validate_prediction(
     request: Request,
@@ -218,7 +277,14 @@ async def validate_prediction(
         
         # Ajouter la prédiction validée aux métriques
         logger.info("[API] Tentative de validation via le moniteur")
-        monitor.validate_last_prediction(validation.predicted_class)
+        success = monitor.validate_last_prediction(validation.predicted_class)
+        
+        if not success:
+            return {
+                "status": "warning",
+                "message": "Aucune prédiction récente à valider"
+            }
+            
         logger.info(f"[API] Prédiction validée pour la classe: {validation.predicted_class}")
         
         # Générer et sauvegarder le rapport avec les prédictions validées
@@ -235,7 +301,10 @@ async def validate_prediction(
         else:
             logger.warning("[API] Aucune métrique générée")
         
-        return {"status": "success", "message": "Prédiction validée"}
+        return {
+            "status": "success", 
+            "message": "Prédiction validée"
+        }
     except Exception as e:
         log_security_event(
             "VALIDATION_ERROR",
@@ -249,19 +318,29 @@ async def validate_prediction(
             detail=f"Erreur lors de la validation de la prédiction: {str(e)}"
         )
 
-@app.post("/search_tags")
+@app.post("/search_tags", summary="Rechercher des verres par tags", description="Recherche les verres correspondant à une liste de tags")
 @limiter.limit("10/minute")
 async def search_tags(
     request: Request, 
-    tags: list[str] = Body(...), 
+    tags: List[str] = Body(...), 
     current_user_email: str = Depends(get_current_user)
 ):
-    logger.info(f"Recherche de verres pour les tags: {tags} (utilisateur: {current_user_email})")
+    """
+    Recherche les verres correspondant aux tags donnés
+    """
+    if not tags:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La liste de tags ne peut pas être vide"
+        )
+        
+    logger.info(f"Recherche pour les tags: {tags}")
     results = find_matching_verres(tags)
-    logger.info(f"Résultats trouvés: {len(results)} verres")
+    logger.info(f"Trouvé {len(results)} résultats")
+    
     return {"results": results}
 
-@app.get("/verre/{verre_id}")
+@app.get("/verre/{verre_id}", summary="Obtenir les détails d'un verre", description="Récupère les détails complets d'un verre par son ID")
 @limiter.limit("20/minute")
 async def get_verre(
     request: Request, 
@@ -269,14 +348,14 @@ async def get_verre(
     current_user_email: str = Depends(get_current_user)
 ):
     """
-    Récupère les détails complets d'un verre par son ID
+    Récupère les détails d'un verre par son ID
     """
-    logger.info(f"Récupération des détails du verre ID: {verre_id} (utilisateur: {current_user_email})")
+    logger.info(f"Recherche du verre avec ID: {verre_id}")
     verre = get_verre_details(verre_id)
     
-    if verre:
-        logger.info(f"Détails du verre trouvés: {verre.get('nom', 'inconnu')}")
-        return {"verre": verre}
-    else:
-        logger.warning(f"Verre non trouvé avec ID: {verre_id}")
-        return {"error": "Verre non trouvé"} 
+    if not verre:
+        logger.warning(f"Verre avec ID {verre_id} non trouvé")
+        return {"error": "Verre non trouvé"}
+        
+    logger.info(f"Verre trouvé: {verre['nom']}")
+    return {"verre": verre} 
