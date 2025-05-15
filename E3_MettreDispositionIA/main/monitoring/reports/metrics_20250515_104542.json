@@ -1,0 +1,13 @@
+{
+  "timestamp": "2025-05-15T10:45:42.247580",
+  "avg_confidence": 0.49029970665772754,
+  "avg_processing_time": 0.07681008179982503,
+  "n_predictions": 6,
+  "predictions_per_class": {
+    "e_courbebasse": 3,
+    "lune": 1,
+    "\u00e9toile": 1,
+    "balance": 1
+  },
+  "prediction_accuracy": 0.3333333333333333
+}

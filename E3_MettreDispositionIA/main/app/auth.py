@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 from typing import Optional, Tuple
+from api_client import store_token as store_model_api_token # Importer la fonction de stockage
 
 # URLs des APIs
 DB_API_URL = "http://localhost:8001"  # API de la base de données
@@ -24,9 +25,11 @@ def login(username: str, password: str) -> Tuple[Optional[str], Optional[str]]:
         )
         
         if db_response.status_code == 200 and model_response.status_code == 200:
+            model_token = model_response.json()["access_token"]
+            store_model_api_token(model_token) # Stocker le token pour l'API modèle
             return (
                 db_response.json()["access_token"],
-                model_response.json()["access_token"]
+                model_token
             )
         return None, None
     except Exception as e:
@@ -41,7 +44,7 @@ def check_authentication():
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
         st.session_state.db_token = None
-        st.session_state.model_token = None
+        # st.session_state.model_token n'est plus nécessaire ici si api_client gère son propre état
 
     if not st.session_state.authenticated:
         st.title("🔐 Connexion")
@@ -52,10 +55,10 @@ def check_authentication():
             submit = st.form_submit_button("Se connecter")
             
             if submit:
-                db_token, model_token = login(username, password)
-                if db_token and model_token:
+                db_token, model_token_from_login = login(username, password)
+                if db_token and model_token_from_login: # model_token_from_login est déjà stocké par store_model_api_token dans login()
                     st.session_state.db_token = db_token
-                    st.session_state.model_token = model_token
+                    # st.session_state.model_token = model_token_from_login # Plus besoin de le stocker ici
                     st.session_state.authenticated = True
                     st.success("Connexion réussie!")
                     st.rerun()
@@ -70,5 +73,6 @@ def logout():
     """
     st.session_state.authenticated = False
     st.session_state.db_token = None
-    st.session_state.model_token = None
+    # st.session_state.model_token = None # Plus besoin
+    store_model_api_token(None) # Effacer le token stocké dans api_client
     st.rerun() 

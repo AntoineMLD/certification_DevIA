@@ -1,13 +1,18 @@
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 from PIL import Image
-from api_client import get_similar_tags_from_api, get_verres_by_tags_api, get_verre_details_api
+from api_client import get_similar_tags_from_api, get_verres_by_tags_api, get_verre_details_api, validate_prediction
 import pandas as pd
 import numpy as np
 import os
 import requests
 from io import BytesIO
 from auth import check_authentication, logout
+import logging
+
+# Configuration du logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Vérifier l'authentification avant tout
 check_authentication()
@@ -86,9 +91,22 @@ with col_left:
                     st.warning(f"Image non trouvée: {e}")
                 
                 if st.button("Ajouter", key=f"add_{idx}"):
-                    if res['class'] not in st.session_state.selected_tags:
-                        st.session_state.selected_tags.append(res['class'])
-                        st.experimental_rerun()
+                    try:
+                        logger.info(f"[UI] Clic sur le bouton Ajouter pour la classe: {res['class']}")
+                        # Valider la prédiction auprès de l'API
+                        validate_prediction(res['class'])
+                        logger.info(f"[UI] Validation réussie pour la classe: {res['class']}")
+                        # Ajouter aux tags sélectionnés
+                        if res['class'] not in st.session_state.selected_tags:
+                            st.session_state.selected_tags.append(res['class'])
+                            logger.info(f"[UI] Tag {res['class']} ajouté aux tags sélectionnés")
+                            st.experimental_rerun()
+                    except Exception as e:
+                        logger.error(f"[UI] Erreur lors de la validation de {res['class']}: {str(e)}")
+                        st.error(f"Erreur lors de la validation: {e}")
+                        if res['class'] not in st.session_state.selected_tags:
+                            st.session_state.selected_tags.append(res['class'])
+                            st.experimental_rerun()
 
     # --- Tags sélectionnés ---
     st.subheader("🏷️ Tags sélectionnés")

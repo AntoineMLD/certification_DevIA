@@ -2,9 +2,42 @@ import requests
 import streamlit as st
 from PIL import Image
 import io
+import logging
+import os
+from jose import jwt, JWTError
+from datetime import datetime, timedelta
 
 DB_API_URL = "http://localhost:8001"  # API de la base de données
-MODEL_API_URL = "http://localhost:8000"  # API du modèle IA
+MODEL_API_URL = os.getenv("MODEL_API_URL", "http://localhost:8000")
+TOKEN_KEY = os.getenv("TOKEN_KEY", "votre_cle_secrete_ici")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+
+logger = logging.getLogger(__name__)
+
+def create_api_token(email: str, version: int = 1) -> str:
+    to_encode = {
+        "sub": email,
+        "exp": datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+        "version": version
+    }
+    encoded_jwt = jwt.encode(to_encode, TOKEN_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+_session_token: str | None = None
+
+def store_token(token: str):
+    global _session_token
+    _session_token = token
+    logger.info("Token d'authentification stocké dans la session")
+
+def get_stored_token() -> str | None:
+    global _session_token
+    if _session_token:
+        logger.info("Token d'authentification trouvé dans la session")
+    else:
+        logger.warning("Aucun token d'authentification trouvé dans la session")
+    return _session_token
 
 def get_db_headers():
     """
@@ -18,15 +51,13 @@ def get_db_headers():
     return {"Content-Type": "application/json"}
 
 def get_model_headers():
-    """
-    Retourne les headers avec le token d'authentification pour l'API du modèle
-    """
-    if "model_token" in st.session_state and st.session_state.model_token:
-        return {
-            "Authorization": f"Bearer {st.session_state.model_token}",
-            "Content-Type": "application/json"
-        }
-    return {"Content-Type": "application/json"}
+    token = get_stored_token()
+    headers = {
+        "Content-Type": "application/json",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 def get_similar_tags_from_api(image: Image.Image, route: str = "/match"):
     """
@@ -36,38 +67,72 @@ def get_similar_tags_from_api(image: Image.Image, route: str = "/match"):
     image.save(buffered, format="PNG")
     buffered.seek(0)
     
-    # Récupérer les headers d'authentification
     headers = get_model_headers()
-    # Supprimer Content-Type car il sera automatiquement défini par requests pour les fichiers
     headers.pop("Content-Type", None)
     
+    logger.info(f"Appel de l'API {MODEL_API_URL}{route} pour la correspondance d'image")
     response = requests.post(
         f"{MODEL_API_URL}{route}",
         files={"file": ("image.png", buffered, "image/png")},
         headers=headers
     )
+    if response.status_code == 422:
+        try:
+            logger.error(f"Erreur 422 (Unprocessable Entity) de l'API {route}. Détails: {response.json()}")
+        except requests.exceptions.JSONDecodeError:
+            logger.error(f"Erreur 422 (Unprocessable Entity) de l'API {route}. Réponse non JSON: {response.text}")
     response.raise_for_status()
     return response.json()["matches"]
+
+def validate_prediction(predicted_class: str, route: str = "/validate_prediction"):
+    """
+    Envoie la classe prédite validée à l'API.
+    """
+    logger.info(f"Appel de l'API {MODEL_API_URL}{route} pour valider la classe: {predicted_class}")
+    response = requests.post(
+        f"{MODEL_API_URL}{route}",
+        json={"predicted_class": predicted_class},
+        headers=get_model_headers()
+    )
+    if response.status_code == 422:
+        try:
+            logger.error(f"Erreur 422 (Unprocessable Entity) de l'API {route}. Détails: {response.json()}")
+        except requests.exceptions.JSONDecodeError:
+            logger.error(f"Erreur 422 (Unprocessable Entity) de l'API {route}. Réponse non JSON: {response.text}")
+    response.raise_for_status()
+    return response.json()
 
 def get_verres_by_tags_api(tags: list[str], route: str = "/search_tags"):
     """
     Envoie une liste de tags à l'API du modèle pour récupérer les verres correspondants.
     """
+    logger.info(f"Appel de l'API {MODEL_API_URL}{route} avec les tags: {tags}")
     response = requests.post(
         f"{MODEL_API_URL}{route}",
         json=tags,
         headers=get_model_headers()
     )
+    if response.status_code == 422:
+        try:
+            logger.error(f"Erreur 422 (Unprocessable Entity) de l'API {route}. Détails: {response.json()}")
+        except requests.exceptions.JSONDecodeError:
+            logger.error(f"Erreur 422 (Unprocessable Entity) de l'API {route}. Réponse non JSON: {response.text}")
     response.raise_for_status()
     return response.json()["results"]
 
-def get_verre_details_api(verre_id: int, route: str = "/verres"):
+def get_verre_details_api(verre_id: int, route: str = "/verre"):
     """
-    Récupère les détails d'un verre depuis l'API de base de données.
+    Récupère les détails complets d'un verre par son ID.
     """
+    logger.info(f"Appel de l'API {MODEL_API_URL}{route}/{verre_id} pour les détails du verre")
     response = requests.get(
-        f"{DB_API_URL}{route}/{verre_id}",
-        headers=get_db_headers()
+        f"{MODEL_API_URL}{route}/{verre_id}",
+        headers=get_model_headers()
     )
+    if response.status_code == 422:
+        try:
+            logger.error(f"Erreur 422 (Unprocessable Entity) de l'API {route}/{verre_id}. Détails: {response.json()}")
+        except requests.exceptions.JSONDecodeError:
+            logger.error(f"Erreur 422 (Unprocessable Entity) de l'API {route}/{verre_id}. Réponse non JSON: {response.text}")
     response.raise_for_status()
-    return response.json()
+    return response.json()["verre"]

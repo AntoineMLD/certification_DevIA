@@ -83,8 +83,20 @@ mkdir -p logs
 # Obtenir le chemin absolu du répertoire de travail
 WORKSPACE_DIR=$(pwd)
 
+# Configuration de l'environnement pour E1
+if [ ! -f "E1_GestionDonnees/api/.env" ]; then
+    error_message "Le fichier .env n'existe pas dans E1_GestionDonnees/api/"
+    exit 1
+fi
+
+# Charger les variables depuis le fichier .env de E1
+export DATABASE_URL="sqlite:///$(pwd)/E1_GestionDonnees/Base_de_donnees/france_optique.db"
+set -a
+source E1_GestionDonnees/api/.env
+set +a
+
 # Démarrage de l'API Base de données (E1)
-start_service "API Base de données" "python -m uvicorn api.app.main:app --reload --port 8001" 8001 "E1_GestionDonnees"
+start_service "API Base de données" "python -m uvicorn app.main:app --reload --port 8001" 8001 "E1_GestionDonnees/api"
 
 # Démarrage de l'API IA (E3)
 E3_DIR="$WORKSPACE_DIR/E3_MettreDispositionIA/main"
@@ -92,6 +104,9 @@ start_service "API IA" "python -m uvicorn api.app.main:app --reload --port 8000"
 
 # Démarrage de l'interface Streamlit principale (E3)
 start_service "Interface Streamlit" "python -m streamlit run app/app.py --server.port 8501" 8501 "$E3_DIR"
+
+# Démarrage du dashboard de monitoring
+start_service "Dashboard Monitoring" "python -m streamlit run monitoring/dashboard.py --server.port 8502" 8502 "$E3_DIR"
 
 # Retour au répertoire initial
 cd "$WORKSPACE_DIR"
@@ -101,6 +116,7 @@ echo -e "\n${BLUE}Services disponibles :${NC}"
 echo -e "${BLUE}API Base de données : ${NC}http://localhost:8001"
 echo -e "${BLUE}API IA : ${NC}http://localhost:8000"
 echo -e "${BLUE}Interface principale : ${NC}http://localhost:8501"
+echo -e "${BLUE}Dashboard Monitoring : ${NC}http://localhost:8502"
 
 # Attente de l'arrêt de tous les processus
 wait
