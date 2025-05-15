@@ -27,6 +27,7 @@ from api.app.config import (
     API_VERSION,
     API_DESCRIPTION
 )
+from api.app.openapi_config import setup_openapi
 import io 
 from PIL import Image
 from datetime import datetime
@@ -98,6 +99,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Configuration du schéma OpenAPI personnalisé
+setup_openapi(app)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)

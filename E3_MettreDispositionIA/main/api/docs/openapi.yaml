@@ -1,0 +1,491 @@
+openapi: 3.0.3
+info:
+  title: API Recherche de Gravures Similaires
+  description: |
+    # API Recherche de Gravures Similaires
+
+    Cette API permet de trouver des gravures similaires à partir d'une image dessinée par l'utilisateur.
+    Elle utilise un modèle d'IA basé sur EfficientNet pour générer des embeddings vectoriels des images
+    et calculer la similarité entre elles.
+
+    ## Authentification
+
+    L'API utilise l'authentification OAuth2 avec des tokens JWT. Pour accéder aux endpoints protégés,
+    vous devez d'abord obtenir un token en envoyant vos identifiants à l'endpoint `/token`.
+    Ce token doit ensuite être inclus dans l'en-tête `Authorization` de toutes les requêtes
+    sous la forme `Bearer {token}`.
+
+    Les tokens ont une durée de validité limitée et peuvent être automatiquement renouvelés
+    lorsqu'ils approchent de leur expiration.
+
+    ## Sécurité
+
+    - Validation des entrées pour prévenir les injections
+    - Rate limiting pour prévenir les attaques par déni de service
+    - Journalisation des événements de sécurité
+    - Tokens JWT avec rotation automatique
+
+    ## Structure des données
+
+    Les embeddings sont des vecteurs de 256 dimensions qui représentent les caractéristiques
+    visuelles des images. La similarité entre deux embeddings est calculée en utilisant
+    la similarité cosinus, qui varie de -1 (complètement différent) à 1 (identique).
+  version: 1.0.0
+  contact:
+    name: Support API
+    email: support@example.com
+servers:
+  - url: http://localhost:8000
+    description: Serveur de développement local
+tags:
+  - name: Authentification
+    description: Opérations liées à l'authentification
+  - name: Images
+    description: Opérations liées au traitement et à l'analyse d'images
+  - name: Verres
+    description: Opérations liées à la recherche et aux détails des verres
+  - name: Validation
+    description: Opérations liées à la validation des prédictions
+
+paths:
+  /token:
+    post:
+      tags:
+        - Authentification
+      summary: Obtenir un token d'authentification
+      description: |
+        Authentifie l'utilisateur et renvoie un token JWT.
+        Ce token doit être utilisé dans l'en-tête Authorization de toutes les requêtes
+        sous la forme `Bearer {token}`.
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  description: Email de l'utilisateur
+                  example: admin@example.com
+                password:
+                  type: string
+                  description: Mot de passe de l'utilisateur
+                  format: password
+                  example: admin_password
+              required:
+                - username
+                - password
+      responses:
+        '200':
+          description: Token d'authentification généré avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    description: Token JWT à utiliser pour les requêtes authentifiées
+                  token_type:
+                    type: string
+                    enum: [bearer]
+                    default: bearer
+                    description: Type de token
+        '401':
+          description: Identifiants incorrects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Incorrect email or password
+        '400':
+          description: Erreur de validation des données
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Email format is invalid
+
+  /embedding:
+    post:
+      tags:
+        - Images
+      summary: Obtenir l'embedding d'une image
+      description: |
+        Calcule et renvoie l'embedding vectoriel d'une image.
+        L'embedding est un vecteur de 256 dimensions qui représente les caractéristiques visuelles de l'image.
+      operationId: getImageEmbedding
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Image à analyser (PNG ou JPEG)
+      responses:
+        '200':
+          description: Embedding calculé avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  embedding:
+                    type: array
+                    items:
+                      type: number
+                      format: float
+                    description: Vecteur d'embedding de dimension 256
+        '400':
+          description: Fichier image invalide
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Invalid image file
+        '401':
+          description: Non authentifié ou token invalide
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Not authenticated
+        '429':
+          description: Trop de requêtes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Too many requests
+
+  /match:
+    post:
+      tags:
+        - Images
+      summary: Trouver les correspondances pour une image
+      description: |
+        Analyse une image et renvoie les classes les plus similaires.
+        Les résultats sont triés par ordre décroissant de similarité.
+      operationId: getBestMatch
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Image à analyser (PNG ou JPEG)
+      responses:
+        '200':
+          description: Correspondances trouvées avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  matches:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        class:
+                          type: string
+                          description: Classe de la gravure
+                          example: e_courbebasse
+                        similarity:
+                          type: number
+                          format: float
+                          description: Score de similarité entre 0 et 1
+                          example: 0.95
+        '400':
+          description: Fichier image invalide ou autre erreur de validation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Invalid image file
+        '401':
+          description: Non authentifié ou token invalide
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Not authenticated
+        '429':
+          description: Trop de requêtes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Too many requests
+
+  /validate_prediction:
+    post:
+      tags:
+        - Validation
+      summary: Valider une prédiction
+      description: |
+        Permet de valider une prédiction et de l'ajouter aux métriques.
+        Cela permet d'améliorer les performances du modèle en collectant des données de validation.
+      operationId: validatePrediction
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                predicted_class:
+                  type: string
+                  description: Classe prédite à valider
+                  example: e_courbebasse
+      responses:
+        '200':
+          description: Prédiction validée avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                    description: Statut de la validation
+                  message:
+                    type: string
+                    description: Message de confirmation
+                    example: Prediction successfully validated
+        '400':
+          description: Données de validation invalides
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Invalid validation data
+        '401':
+          description: Non authentifié ou token invalide
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Not authenticated
+        '429':
+          description: Trop de requêtes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Too many requests
+
+  /search_tags:
+    post:
+      tags:
+        - Verres
+      summary: Rechercher des verres par tags
+      description: |
+        Recherche les verres correspondant à une liste de tags.
+        Les résultats sont triés par pertinence.
+      operationId: searchTags
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+                description: Tag à rechercher
+              example: ["couleur_rouge", "forme_ronde"]
+      responses:
+        '200':
+          description: Recherche effectuée avec succès
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      description: Identifiant unique du verre
+                      example: 123
+                    name:
+                      type: string
+                      description: Nom du verre
+                      example: Verre à vin rouge
+                    tags:
+                      type: array
+                      items:
+                        type: string
+                      description: Tags associés au verre
+                      example: ["couleur_rouge", "forme_ronde", "pied_court"]
+                    image_url:
+                      type: string
+                      description: URL de l'image du verre
+                      example: "/images/verre_123.jpg"
+        '401':
+          description: Non authentifié ou token invalide
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Not authenticated
+        '429':
+          description: Trop de requêtes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Too many requests
+
+  /verre/{verre_id}:
+    get:
+      tags:
+        - Verres
+      summary: Obtenir les détails d'un verre
+      description: |
+        Récupère les détails complets d'un verre par son ID.
+        Inclut toutes les informations disponibles sur le verre.
+      operationId: getVerre
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: verre_id
+          in: path
+          description: ID du verre à récupérer
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 123
+      responses:
+        '200':
+          description: Détails du verre récupérés avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: Identifiant unique du verre
+                    example: 123
+                  name:
+                    type: string
+                    description: Nom du verre
+                    example: Verre à vin rouge
+                  description:
+                    type: string
+                    description: Description détaillée du verre
+                    example: Verre à vin rouge avec pied court et bord fin
+                  tags:
+                    type: array
+                    items:
+                      type: string
+                    description: Tags associés au verre
+                    example: ["couleur_rouge", "forme_ronde", "pied_court"]
+                  image_url:
+                    type: string
+                    description: URL de l'image du verre
+                    example: "/images/verre_123.jpg"
+                  metadata:
+                    type: object
+                    additionalProperties: true
+                    description: Métadonnées additionnelles sur le verre
+        '404':
+          description: Verre non trouvé
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Verre not found
+        '401':
+          description: Non authentifié ou token invalide
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Not authenticated
+        '429':
+          description: Trop de requêtes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Too many requests
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Token JWT obtenu via l'endpoint `/token`.
+        À inclure dans l'en-tête Authorization sous la forme `Bearer {token}`. 
