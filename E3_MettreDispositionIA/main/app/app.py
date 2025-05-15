@@ -1,7 +1,7 @@
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 from PIL import Image
-from api_client import get_similar_tags_from_api, get_verres_by_tags_api, get_verre_details_api, get_verre_staging_details_api, validate_prediction
+from app.api_client import get_similar_tags_from_api, get_verres_by_tags_api, get_verre_details_api, get_verre_staging_details_api, validate_prediction
 import pandas as pd
 import numpy as np
 import os
@@ -9,7 +9,7 @@ import requests
 import glob
 import re
 from io import BytesIO
-from auth import check_authentication, logout
+from app.auth import check_authentication, logout
 import logging
 
 # Configuration du logging

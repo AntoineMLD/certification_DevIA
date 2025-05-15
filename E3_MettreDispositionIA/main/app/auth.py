@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 from typing import Optional, Tuple
-from api_client import store_token as store_model_api_token # Importer la fonction de stockage
+from app.api_client import store_token as store_model_api_token # Importer la fonction de stockage avec le bon chemin
 
 # URLs des APIs
 DB_API_URL = "http://localhost:8001"  # API de la base de données
