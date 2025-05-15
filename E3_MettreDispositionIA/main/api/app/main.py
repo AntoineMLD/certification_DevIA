@@ -11,7 +11,7 @@ from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from fastapi.middleware.cors import CORSMiddleware
 from api.app.model_loader import load_model, preprocess_image, get_embedding
 from api.app.similarity_search import get_top_matches, load_references, reference_embeddings
-from api.app.database import find_matching_verres, get_verre_details
+from api.app.database import find_matching_verres, get_verre_details, get_verre_staging_details
 from api.app.security import (
     UserCredentials,
     create_access_token,
@@ -362,4 +362,25 @@ async def get_verre(
         return {"error": "Verre non trouvé"}
         
     logger.info(f"Verre trouvé: {verre['nom']}")
-    return {"verre": verre} 
+    return {"verre": verre}
+
+@app.get("/verre_staging/{verre_id}", summary="Obtenir les détails d'un verre depuis staging", description="Récupère les détails d'un verre depuis la table staging par son ID")
+@limiter.limit("20/minute")
+async def get_verre_staging(
+    request: Request, 
+    verre_id: int, 
+    current_user_email: str = Depends(get_current_user)
+):
+    """
+    Récupère les détails d'un verre depuis la table staging par son ID.
+    Cette table contient des informations supplémentaires comme glass_name.
+    """
+    logger.info(f"Recherche du verre avec ID {verre_id} dans la table staging")
+    verre = get_verre_staging_details(verre_id)
+    
+    if not verre:
+        logger.warning(f"Verre avec ID {verre_id} non trouvé dans staging ou pas d'id_interne")
+        return {"verre_staging": {}}
+        
+    logger.info(f"Verre trouvé dans staging avec glass_name: {verre.get('glass_name', 'Non spécifié')}")
+    return {"verre_staging": verre} 

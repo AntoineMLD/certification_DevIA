@@ -1,12 +1,13 @@
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 from PIL import Image
-from api_client import get_similar_tags_from_api, get_verres_by_tags_api, get_verre_details_api, validate_prediction
+from api_client import get_similar_tags_from_api, get_verres_by_tags_api, get_verre_details_api, get_verre_staging_details_api, validate_prediction
 import pandas as pd
 import numpy as np
 import os
 import requests
 import glob
+import re
 from io import BytesIO
 from auth import check_authentication, logout
 import logging
@@ -100,6 +101,78 @@ def find_symbol_image(symbol_name):
     
     logger.warning(f"Aucune image trouvée pour le symbole: {symbol_name}")
     return None
+
+# Fonction pour extraire le bon nom d'un verre
+def extract_verre_name(verre_data):
+    """
+    Extrait le nom correct d'un verre à partir des données
+    
+    Args:
+        verre_data (dict): Données du verre
+        
+    Returns:
+        str: Nom correctement formaté du verre
+    """
+    # Essayer d'abord glass_name puis nom sinon utiliser 'Non spécifié'
+    nom_complet = verre_data.get('glass_name', verre_data.get('nom', 'Non spécifié'))
+    
+    # Pour ce cas particulier, on veut utiliser le nom complet
+    # puisqu'il n'y a pas de format numérique X.YY
+    return nom_complet
+
+# Fonction pour récupérer les détails complets d'un verre (y compris le glass_name de staging)
+def get_full_verre_details(verre_id):
+    """
+    Récupère les détails complets d'un verre, y compris les informations de la table staging
+    
+    Args:
+        verre_id (int): ID du verre
+        
+    Returns:
+        dict: Détails complets du verre combinant les données des tables verres et staging
+    """
+    try:
+        # Récupérer les détails de base du verre
+        logger.info(f"Récupération des détails de base pour le verre {verre_id}")
+        verre_details = get_verre_details_api(verre_id)
+        
+        if not verre_details:
+            logger.error(f"Impossible de récupérer les détails de base pour le verre {verre_id}")
+            return None
+        
+        logger.info(f"Détails de base récupérés pour le verre {verre_id}: {verre_details.get('nom', 'N/A')}")
+        
+        # Tenter de récupérer les détails de staging qui contient glass_name
+        try:
+            logger.info(f"Tentative de récupération des détails de staging pour le verre {verre_id}")
+            staging_details = get_verre_staging_details_api(verre_id)
+            
+            # Journaliser les détails de staging bruts
+            logger.info(f"Détails de staging bruts reçus: {staging_details}")
+            
+            # Si on a récupéré les détails de staging, les fusionner avec les détails de base
+            if staging_details and isinstance(staging_details, dict):
+                glass_name = staging_details.get('glass_name')
+                logger.info(f"Détails staging trouvés pour verre {verre_id}: glass_name = {glass_name}")
+                
+                # Fusionner les deux dictionnaires (les clés de staging ont priorité)
+                for key, value in staging_details.items():
+                    if value is not None:  # Ne pas écraser avec des valeurs None
+                        verre_details[key] = value
+                        
+                # Vérifier que le champ glass_name a bien été fusionné
+                logger.info(f"Après fusion, le champ glass_name est: {verre_details.get('glass_name', 'Non défini')}")
+            else:
+                logger.warning(f"Aucun détail staging trouvé pour le verre {verre_id} ou format inattendu")
+        except Exception as e:
+            logger.warning(f"Impossible de récupérer les détails de staging pour le verre {verre_id}: {str(e)}")
+            logger.exception("Détail de l'erreur:")
+        
+        return verre_details
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des détails du verre {verre_id}: {str(e)}")
+        logger.exception("Détail de l'erreur:")
+        return None
 
 # --- Colonne de gauche : dessin, sélection et recherche ---
 col_left, col_right = st.columns([2, 1])
@@ -270,7 +343,29 @@ with col_right:
     
     # Ajouter une fonction pour afficher les détails d'un verre
     def display_verre_details(verre):
-        st.markdown(f"### {verre.get('nom', 'Verre')} {verre.get('variante', '')}")
+        # Récupérer le nom brut du verre depuis la table staging
+        nom_staging = verre.get('glass_name')
+        
+        # Afficher le nom complet du verre comme titre principal
+        if nom_staging:
+            st.markdown(f"### {nom_staging}")
+        else:
+            st.warning("⚠️ glass_name non disponible dans la table staging")
+            nom_verre = verre.get('nom', 'Verre')
+            variante = verre.get('variante', '')
+            st.markdown(f"### {nom_verre} {variante}")
+            
+            # Essayons de montrer ce qui est disponible pour le débogage
+            st.expander("Déboguer les données disponibles").write(f"Clés disponibles: {', '.join(verre.keys())}")
+        
+        # Afficher un bouton pour recharger les informations
+        if st.button("🔄 Actualiser les données"):
+            verre_id = verre.get("id")
+            if verre_id:
+                st.info(f"Actualisation des données pour le verre #{verre_id}...")
+                verre_details = get_full_verre_details(verre_id)
+                st.session_state.selected_verre_details = verre_details
+                st.experimental_rerun()
         
         # Informations générales
         st.markdown("#### Informations générales")
@@ -278,9 +373,28 @@ with col_right:
         with col1:
             st.markdown(f"**ID:** {verre.get('id')}")
             st.markdown(f"**Fournisseur:** {verre.get('fournisseur_nom', 'Non spécifié')}")
+            st.markdown(f"**Nom de base:** {verre.get('nom', 'Non spécifié')}")
+            st.markdown(f"**Nom complet (staging):** {nom_staging if nom_staging else '⚠️ Non disponible'}")
+            st.markdown(f"**Variante:** {verre.get('variante', '')}")
             st.markdown(f"**Indice:** {verre.get('indice', 'Non spécifié')}")
-        
+            
         with col2:
+            # Debug info avec l'API
+            db_info = st.expander("Informations de débogage")
+            with db_info:
+                st.markdown(f"**ID verre utilisé pour staging:** {verre.get('id')}")
+                st.markdown(f"**ID interne:** {verre.get('id_interne', 'Non disponible')}")
+                
+                # Afficher un bouton pour tester directement l'API staging
+                if st.button("🔍 Tester l'API Staging"):
+                    verre_id = verre.get("id")
+                    if verre_id:
+                        try:
+                            staging_details = get_verre_staging_details_api(verre_id)
+                            st.json(staging_details)
+                        except Exception as e:
+                            st.error(f"Erreur: {str(e)}")
+            
             # Hauteurs
             if verre.get('hauteur_min') or verre.get('hauteur_max'):
                 hauteur_min = verre.get('hauteur_min', 'N/A')
@@ -328,8 +442,30 @@ with col_right:
     
     # Permettre la sélection d'un verre depuis le tableau
     if st.session_state.matched_verres:
-        # Créer une liste d'options pour le sélecteur
-        verre_options = [f"#{v['id']} - {v.get('fournisseur', '')} {v.get('nom', '')} {v.get('variante', '')}" for v in st.session_state.matched_verres]
+        # Chercher d'abord les détails complets pour chaque verre
+        verre_details_list = []
+        for verre in st.session_state.matched_verres:
+            try:
+                # Récupérer les détails complets du verre via l'API
+                verre_id = verre.get('id')
+                verre_details = get_full_verre_details(verre_id)
+                
+                # Journaliser les détails pour le débogage
+                logger.info(f"Détails récupérés pour le verre {verre_id}: glass_name: {verre_details.get('glass_name', 'Non spécifié')}")
+                
+                verre_details_list.append(verre_details)
+            except Exception as e:
+                # En cas d'erreur, utiliser les informations limitées disponibles
+                logger.error(f"Erreur lors de la récupération des détails du verre {verre.get('id')}: {e}")
+                verre_details_list.append(verre)
+        
+        # Créer une liste d'options pour le sélecteur avec le nom complet du verre de staging
+        verre_options = []
+        for v in verre_details_list:
+            verre_id = v.get('id', 'N/A')
+            # Récupérer directement le glass_name de staging
+            glass_name = v.get('glass_name', v.get('nom', 'Non spécifié'))
+            verre_options.append(f"#{verre_id} - {glass_name}")
         
         # Ajouter une option vide en premier
         verre_options.insert(0, "Sélectionnez un verre...")
@@ -344,20 +480,29 @@ with col_right:
             try:
                 verre_id = int(verre_id_str)
                 
-                # Trouver le verre sélectionné dans la liste des verres correspondants
-                selected_verre = next((v for v in st.session_state.matched_verres if v["id"] == verre_id), None)
+                # Trouver le verre sélectionné dans la liste des détails complets
+                selected_verre = next((v for v in verre_details_list if v.get("id") == verre_id), None)
                 
                 if selected_verre:
-                    # Récupérer les détails complets du verre via l'API
+                    # Les détails complets sont déjà disponibles, pas besoin d'appel API supplémentaire
+                    st.session_state.selected_verre_details = selected_verre
+                    # Afficher les détails
+                    display_verre_details(selected_verre)
+                else:
+                    # Si pour une raison quelconque nous n'avons pas les détails, essayer de les récupérer
                     try:
-                        verre_details = get_verre_details_api(verre_id)
+                        verre_details = get_full_verre_details(verre_id)
                         st.session_state.selected_verre_details = verre_details
                         # Afficher les détails
                         display_verre_details(verre_details)
                     except Exception as e:
                         st.error(f"Erreur lors de la récupération des détails du verre: {e}")
-                        # Afficher les informations limitées que nous avons déjà
-                        display_verre_details(selected_verre)
+                        # Chercher dans la liste originale
+                        fallback_verre = next((v for v in st.session_state.matched_verres if v.get("id") == verre_id), None)
+                        if fallback_verre:
+                            display_verre_details(fallback_verre)
+                        else:
+                            st.error("Impossible de trouver les détails du verre sélectionné.")
             except ValueError:
                 st.error(f"Erreur lors de la conversion de l'ID du verre: {verre_id_str}")
     else:

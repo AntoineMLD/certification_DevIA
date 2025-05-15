@@ -153,3 +153,64 @@ def get_verre_details(verre_id):
         if 'conn' in locals():
             conn.close()
         return None
+
+def get_verre_staging_details(verre_id):
+    """
+    Récupère les détails d'un verre depuis la table staging qui contient des informations 
+    supplémentaires comme glass_name.
+    
+    Args:
+        verre_id (int): Identifiant du verre.
+        
+    Returns:
+        dict: Détails du verre depuis staging ou None si non trouvé.
+    """
+    if not os.path.exists(DB_PATH):
+        logger.error(f"Erreur: La base de données n'existe pas à {DB_PATH}")
+        return None
+    
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row  # Pour accéder aux colonnes par nom
+        cursor = conn.cursor()
+        
+        # Utiliser directement l'ID du verre pour la table staging
+        logger.info(f"Recherche dans staging avec l'ID: {verre_id}")
+        cursor.execute("""
+            SELECT * FROM staging WHERE id = ?
+        """, (verre_id,))
+        
+        staging_row = cursor.fetchone()
+        
+        # Si aucun résultat avec l'ID direct, essayer avec id_interne comme fallback
+        if not staging_row:
+            logger.info(f"Aucun résultat avec l'ID direct, essai avec id_interne")
+            cursor.execute("SELECT id_interne FROM verres WHERE id = ?", (verre_id,))
+            result = cursor.fetchone()
+            
+            if result and result["id_interne"]:
+                id_interne = result["id_interne"]
+                logger.info(f"id_interne trouvé: {id_interne}, recherche dans staging")
+                cursor.execute("SELECT * FROM staging WHERE id = ?", (id_interne,))
+                staging_row = cursor.fetchone()
+            else:
+                logger.warning(f"Verre avec ID {verre_id} n'a pas d'id_interne")
+                conn.close()
+                return None
+        
+        if not staging_row:
+            conn.close()
+            logger.warning(f"Aucune donnée staging trouvée pour le verre avec ID {verre_id}")
+            return None
+        
+        # Convertir en dictionnaire
+        staging_data = dict(staging_row)
+        
+        conn.close()
+        return staging_data
+    
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des détails staging du verre: {e}")
+        if 'conn' in locals():
+            conn.close()
+        return None

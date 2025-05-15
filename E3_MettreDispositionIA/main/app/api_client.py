@@ -157,3 +157,38 @@ def get_verre_details_api(verre_id: int, route: str = "/verre"):
             logger.error(f"Erreur 422 (Unprocessable Entity) de l'API {route}/{verre_id}. Réponse non JSON: {response.text}")
     response.raise_for_status()
     return response.json()["verre"]
+
+def get_verre_staging_details_api(verre_id: int, route: str = "/verre_staging"):
+    """
+    Récupère les détails d'un verre depuis la table staging par son ID.
+    Cette table contient les informations complètes, notamment le champ glass_name.
+    """
+    logger.info(f"Appel de l'API {MODEL_API_URL}{route}/{verre_id} pour les détails du verre depuis staging")
+    try:
+        response = requests.get(
+            f"{MODEL_API_URL}{route}/{verre_id}",
+            headers=get_model_headers()
+        )
+        
+        if response.status_code == 422:
+            try:
+                logger.error(f"Erreur 422 (Unprocessable Entity) de l'API {route}/{verre_id}. Détails: {response.json()}")
+            except requests.exceptions.JSONDecodeError:
+                logger.error(f"Erreur 422 (Unprocessable Entity) de l'API {route}/{verre_id}. Réponse non JSON: {response.text}")
+            return {}
+            
+        response.raise_for_status()
+        
+        # Obtenir les données et les journaliser
+        data = response.json()
+        verre_staging = data.get("verre_staging", {})
+        
+        if verre_staging:
+            logger.info(f"Données de staging récupérées avec succès pour ID {verre_id}: glass_name={verre_staging.get('glass_name', 'Non disponible')}")
+        else:
+            logger.warning(f"Données de staging vides ou manquantes pour ID {verre_id}")
+        
+        return verre_staging
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des données staging pour ID {verre_id}: {str(e)}")
+        return {}
