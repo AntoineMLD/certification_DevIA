@@ -18,6 +18,7 @@ logging.info("Chargement du fichier .env...")
 load_dotenv()
 logging.info("Variables d'environnement chargées")
 
+
 # Connexion à SQLite
 def connect_sqlite():
     try:
