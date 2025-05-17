@@ -13,7 +13,7 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-# Chargement des variables d'environnement
+# Chargemment des variables d'environnement
 logging.info("Chargement du fichier .env...")
 load_dotenv()
 logging.info("Variables d'environnement chargées")
