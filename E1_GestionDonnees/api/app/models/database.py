@@ -1,10 +1,22 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Table
+from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Table, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 from ..config import settings
+import logging
 
-# Créer la base de données
-engine = create_engine(settings.DATABASE_URL)
+# Configuration du logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Créer la base de données avec des paramètres optimisés pour PostgreSQL
+engine = create_engine(
+    settings.DATABASE_URL,
+    pool_size=20,
+    max_overflow=40,
+    pool_timeout=30,
+    pool_recycle=1800,
+    echo=False
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -72,7 +84,7 @@ class Verre(Base):
     __tablename__ = "verres"
     
     id = Column(Integer, primary_key=True, index=True)
-    nom = Column(String, nullable=False)
+    nom = Column(String, nullable=False, index=True)
     variante = Column(String)
     hauteur_min = Column(Integer)
     hauteur_max = Column(Integer)
@@ -80,16 +92,16 @@ class Verre(Base):
     gravure = Column(String)
     url_source = Column(String)
     
-    # Clés étrangères
-    fournisseur_id = Column(Integer, ForeignKey("fournisseurs.id"))
-    materiau_id = Column(Integer, ForeignKey("materiaux.id"))
-    gamme_id = Column(Integer, ForeignKey("gammes.id"))
-    serie_id = Column(Integer, ForeignKey("series.id"))
+    # Clés étrangères avec index
+    fournisseur_id = Column(Integer, ForeignKey("fournisseurs.id"), index=True)
+    materiau_id = Column(Integer, ForeignKey("materiaux.id"), index=True)
+    gamme_id = Column(Integer, ForeignKey("gammes.id"), index=True)
+    serie_id = Column(Integer, ForeignKey("series.id"), index=True)
     
-    # Relations
-    fournisseur = relationship("Fournisseur", back_populates="verres")
-    materiau = relationship("Materiau", back_populates="verres")
-    gamme = relationship("Gamme", back_populates="verres")
+    # Relations avec lazy="joined" pour éviter les requêtes N+1
+    fournisseur = relationship("Fournisseur", back_populates="verres", lazy="joined")
+    materiau = relationship("Materiau", back_populates="verres", lazy="joined")
+    gamme = relationship("Gamme", back_populates="verres", lazy="joined")
     serie = relationship("Serie", back_populates="verres")
     traitements = relationship("Traitement", secondary=verres_traitements, back_populates="verres")
 

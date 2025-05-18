@@ -7,7 +7,7 @@ from .config import settings
 from .auth import jwt_auth
 from .models.database import get_db, Verre
 from .schemas import schemas
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import or_
 
 # Création de l'application FastAPI
@@ -71,11 +71,11 @@ async def get_all_glasses(
     glasses = (
         db.query(Verre)
         .options(
-            joinedload(Verre.fournisseur),
-            joinedload(Verre.materiau),
-            joinedload(Verre.gamme),
-            joinedload(Verre.serie),
-            joinedload(Verre.traitements)
+            selectinload(Verre.fournisseur),
+            selectinload(Verre.materiau),
+            selectinload(Verre.gamme),
+            selectinload(Verre.serie),
+            selectinload(Verre.traitements)
         )
         .offset(skip)
         .limit(limit)
@@ -101,14 +101,15 @@ async def get_glass_by_id(
     Raises:
         HTTPException: Si le verre n'est pas trouvé
     """
+    # Utiliser une seule requête optimisée avec selectinload
     glass = (
         db.query(Verre)
         .options(
-            joinedload(Verre.fournisseur),
-            joinedload(Verre.materiau),
-            joinedload(Verre.gamme),
-            joinedload(Verre.serie),
-            joinedload(Verre.traitements)
+            selectinload(Verre.fournisseur),
+            selectinload(Verre.materiau),
+            selectinload(Verre.gamme),
+            selectinload(Verre.serie),
+            selectinload(Verre.traitements)
         )
         .filter(Verre.id == glass_id)
         .first()

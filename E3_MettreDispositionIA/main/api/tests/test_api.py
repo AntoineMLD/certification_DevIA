@@ -18,8 +18,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 # Import de l'application FastAPI
 from app.main import app
 
-# Client de test - utiliser une approche plus simple
-client = TestClient(app)  # Réessayer sans argument nommé
+# Client de test
+client = TestClient(app)
 
 # Variables de test
 TEST_USERNAME = "admin@example.com"
