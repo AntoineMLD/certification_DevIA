@@ -22,14 +22,26 @@ class Settings(BaseSettings):
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
     
-    # Database
-    DATABASE_URL: str # Sera chargée depuis .env et validée/transformée ci-dessous
-
+    # Database PostgreSQL
+    db_api_host: str = os.getenv("DB_API_HOST", "localhost")
+    db_api_port: str = os.getenv("DB_API_PORT", "5432")
+    db_api_name: str = os.getenv("DB_API_NAME", "glass_db")
+    db_api_user: str = os.getenv("DB_API_USER", "postgres")
+    db_api_password: str = os.getenv("DB_API_PASSWORD", "azerton3359")
+    
+    # Database SQLite
+    sqlite_db_path: str = os.getenv("SQLITE_DB_PATH", "E1_GestionDonnees/Base_de_donnees/france_optique.db")
+    DATABASE_URL: str = ""  # Sera configuré par le validateur
+    
     # API
     API_VERSION: str = os.getenv("API_VERSION", "1.0")
     API_TITLE: str = os.getenv("API_TITLE", "API France Optique")
     API_DESCRIPTION: str = os.getenv("API_DESCRIPTION", "API for optical lens management")
     API_PREFIX: str = os.getenv("API_PREFIX", "/api/v1")
+    
+    # URLs des services
+    model_api_url: str = os.getenv("MODEL_API_URL", "http://localhost:8000")
+    db_api_url: str = os.getenv("DB_API_URL", "http://localhost:8001")
     
     # Admin
     ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "admin@example.com")
@@ -37,29 +49,25 @@ class Settings(BaseSettings):
     
     # Server
     HOST: str = os.getenv("HOST", "0.0.0.0")
-    PORT: int = int(os.getenv("PORT", "8000"))
+    api_port: str = os.getenv("API_PORT", "8001")
     DEBUG: bool = os.getenv("DEBUG", "True").lower() == "true"
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
-    def assemble_db_connection(cls, v: str) -> str:
-        """
-        Prend le chemin brut DATABASE_URL depuis .env,
-        le résout par rapport à la racine du projet (WORKSPACE_ROOT),
-        et préfixe avec le schéma sqlite:///.
-        """
-        if not (isinstance(v, str) and v.strip()):
-            # Cela se produira si DATABASE_URL est manquant ou vide dans .env
-            raise ValueError("DATABASE_URL dans .env doit être un chemin non vide sous forme de chaîne de caractères.")
-        
-        # v est le chemin depuis .env, ex: "E1_GestionDonnees\Base_de_donnees\france_optique.db"
-        # Ce chemin est relatif à WORKSPACE_ROOT.
-        db_path = (WORKSPACE_ROOT / v).resolve()
+    def assemble_db_connection(cls, v: str, values) -> str:
+        """Configure l'URL de la base de données SQLite."""
+        db_path = (WORKSPACE_ROOT / values.data["sqlite_db_path"]).resolve()
         return f"sqlite:///{db_path}"
 
-    class Config:
-        env_file = ".env"
-        # Pydantic va chercher .env par rapport au répertoire de travail actuel (CWD).
-        # Si l'application est lancée depuis E1_GestionDonnees/api/, il chargera E1_GestionDonnees/api/.env.
+    model_config = {
+        "env_file": ".env",
+        "json_schema_extra": {
+            "example": {
+                "SECRET_KEY": "your-secret-key",
+                "ALGORITHM": "HS256",
+                "ACCESS_TOKEN_EXPIRE_MINUTES": 30
+            }
+        }
+    }
 
 settings = Settings() 
