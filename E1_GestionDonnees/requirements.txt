@@ -21,7 +21,6 @@ plotly==5.19.0
 # Machine Learning
 torch==2.2.0
 torchvision==0.17.0
-evidently==0.4.12
 
 # Sécurité
 python-jose[cryptography]==3.3.0
